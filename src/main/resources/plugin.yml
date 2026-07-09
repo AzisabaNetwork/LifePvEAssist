@@ -1,0 +1,6 @@
+name: LifePvEAssist
+version: '${version}'
+main: net.azisaba.lifepveassist.LifePvEAssist
+api-version: '1.15'
+author: Azisaba Network
+
