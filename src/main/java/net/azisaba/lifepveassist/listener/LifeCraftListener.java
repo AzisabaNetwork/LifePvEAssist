@@ -1,6 +1,6 @@
 package net.azisaba.lifepveassist.listener;
 
-import io.lumine.xikage.mythicmobs.MythicMobs;
+import io.lumine.mythic.bukkit.MythicBukkit;
 import net.azisaba.lifepveassist.LifePvEAssist;
 import net.azisaba.lifepveassist.gui.CreateInventory;
 import net.azisaba.lifepveassist.gui.LifeCraftHolder;
@@ -34,9 +34,9 @@ public class LifeCraftListener implements Listener {
             event.setCancelled(true);
             ItemStack cursorItem = event.getCursor();
             ItemStack currentItem = event.getCurrentItem();
-            ItemStack itemStack1 = MythicMobs.inst().getItemManager().getItemStack("compressed_diamond_block");
-            ItemStack itemStack2 = MythicMobs.inst().getItemManager().getItemStack("compressed_iron_block");
-            ItemStack itemStack3 = MythicMobs.inst().getItemManager().getItemStack("compressed_gold_block");
+            ItemStack itemStack1 = MythicBukkit.inst().getItemManager().getItemStack("compressed_diamond_block");
+            ItemStack itemStack2 = MythicBukkit.inst().getItemManager().getItemStack("compressed_iron_block");
+            ItemStack itemStack3 = MythicBukkit.inst().getItemManager().getItemStack("compressed_gold_block");
             Inventory inventory = event.getInventory();
             Inventory clickedInventory = event.getClickedInventory();
             if (currentItem != null && currentItem.hasItemMeta() && currentItem.getType().equals(Material.WHITE_STAINED_GLASS_PANE) && currentItem.getItemMeta() != null && currentItem.getItemMeta().hasCustomModelData() && currentItem.getItemMeta().getCustomModelData() == 1 && clickedInventory != null && itemStack1 != null && itemStack2 != null && itemStack3 != null && (clickedInventory.contains(itemStack1) || clickedInventory.contains(itemStack2) || clickedInventory.contains(itemStack3))) {

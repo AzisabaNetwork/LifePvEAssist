@@ -1,6 +1,7 @@
 package net.azisaba.lifepveassist.minecraft.server;
 
-import org.bukkit.ChatColor;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -12,30 +13,29 @@ public class BlockingCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (sender instanceof Player) {
-            Player player = (Player) sender;
+        if (sender instanceof Player player) {
             java.util.UUID uuid = player.getUniqueId();
 
             if (args.length > 0 && args[0].equalsIgnoreCase("notify")) {
                 if (PacketListenerImpl.hideNotification.contains(uuid)) {
                     PacketListenerImpl.hideNotification.remove(uuid);
-                    player.sendMessage(ChatColor.GREEN + "ブロック時の通知をオンにしました。");
+                    player.sendMessage(Component.text("ブロック時の通知をオンにしました。", NamedTextColor.GREEN));
                 } else {
                     PacketListenerImpl.hideNotification.add(uuid);
-                    player.sendMessage(ChatColor.GREEN + "ブロック時の通知をオフにしました。");
+                    player.sendMessage(Component.text("ブロック時の通知をオフにしました。", NamedTextColor.GREEN));
                 }
                 return true;
             }
 
             if (!PacketListenerImpl.map.isEmpty() && PacketListenerImpl.map.containsKey(uuid)) {
                 PacketListenerImpl.map.remove(uuid);
-                player.sendMessage(ChatColor.GREEN + "リペア、サルベージをブロックしました。");
+                player.sendMessage(Component.text("リペア、サルベージをブロックしました。", NamedTextColor.GREEN));
             } else {
                 PacketListenerImpl.map.put(uuid, true);
-                player.sendMessage(ChatColor.GREEN + "リペア、サルベージのブロックを解除しました。");
+                player.sendMessage(Component.text("リペア、サルベージのブロックを解除しました。", NamedTextColor.GREEN));
             }
         } else {
-            sender.sendMessage("コンソールからは使用できません。");
+            sender.sendMessage(Component.text("コンソールからは使用できません。", NamedTextColor.RED));
         }
         return true;
     }

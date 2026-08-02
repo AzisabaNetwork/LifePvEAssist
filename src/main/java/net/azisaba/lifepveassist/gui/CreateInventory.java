@@ -1,7 +1,7 @@
 package net.azisaba.lifepveassist.gui;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 
@@ -10,7 +10,7 @@ public class CreateInventory {
     public CreateInventory() {}
 
     public void step1(Player player) {
-        Inventory inv = Bukkit.createInventory(new LifeCraftHolder(), 27, ChatColor.translateAlternateColorCodes('&', "&b&l圧縮ダイヤ&f,&7&l圧縮鉄&f,&6&l圧縮金&fのブロックを入れてください"));
+        Inventory inv = Bukkit.createInventory(new LifeCraftHolder(), 27, LegacyComponentSerializer.legacyAmpersand().deserialize("&b&l圧縮ダイヤ&f,&7&l圧縮鉄&f,&6&l圧縮金&fのブロックを入れてください"));
         for(int i = 0; i <= 9; ++i) {
             inv.setItem(i, (new CreateItem()).getBackPane());
         }
@@ -22,7 +22,7 @@ public class CreateInventory {
     }
 
     public void step2(Player player) {
-        Inventory inv = Bukkit.createInventory(new CraftHolder(), 54, ChatColor.translateAlternateColorCodes('&', "&f[LifeCraft]と書かれた説明付きのアイテムを入れてください"));
+        Inventory inv = Bukkit.createInventory(new CraftHolder(), 54, LegacyComponentSerializer.legacyAmpersand().deserialize("&f[LifeCraft]と書かれた説明付きのアイテムを入れてください"));
         for (int i = 0; i <= 9; ++i) {
             inv.setItem(i, (new CreateItem()).getBackPane());
         }

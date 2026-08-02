@@ -8,8 +8,9 @@ import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
 import net.azisaba.lifepveassist.LifePvEAssist;
 import net.azisaba.lifepvelevel.util.Util;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -33,8 +34,7 @@ public class PacketListenerImpl extends PacketListenerAbstract {
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
         Object user = event.getPlayer();
-        if (!(user instanceof Player)) return;
-        Player player = (Player) user;
+        if (!(user instanceof Player player)) return;
 
         if (event.getPacketType() == PacketType.Play.Client.ANIMATION) {
             if (player.getGameMode() == GameMode.ADVENTURE) {
@@ -69,7 +69,7 @@ public class PacketListenerImpl extends PacketListenerAbstract {
                     if (handItem.hasItemMeta() && handItem.getItemMeta().hasLore()) {
                         if (!player.isSneaking()) {
                             event.setCancelled(true);
-                            player.sendMessage(ChatColor.RED + "このアイテムには説明文があります．強制的に置く場合は、Shiftキーを押しながら設置してください。");
+                            player.sendMessage(Component.text("このアイテムには説明文があります．強制的に置く場合は、Shiftキーを押しながら設置してください。", NamedTextColor.RED));
                             Bukkit.getScheduler().runTask(LifePvEAssist.getInstance(), player::updateInventory);
                             return;
                         }
@@ -79,8 +79,8 @@ public class PacketListenerImpl extends PacketListenerAbstract {
                 if (!map.containsKey(player.getUniqueId())) {
                     event.setCancelled(true);
                     if (!hideNotification.contains(player.getUniqueId())) {
-                        player.sendMessage(ChatColor.GREEN + "/blockingで、鉄・金ブロックのmcMMOスキルを発動できるようにします。");
-                        player.sendMessage(ChatColor.GRAY + "※この通知は /blocking notify で非表示にできます");
+                        player.sendMessage(Component.text("/blockingで、鉄・金ブロックのmcMMOスキルを発動できるようにします。", NamedTextColor.GREEN));
+                        player.sendMessage(Component.text("※この通知は /blocking notify で非表示にできます", NamedTextColor.GRAY));
                     }
                     Bukkit.getScheduler().runTask(LifePvEAssist.getInstance(), player::updateInventory);
                 }

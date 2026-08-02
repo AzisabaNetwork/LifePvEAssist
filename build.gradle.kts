@@ -30,19 +30,20 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.destroystokyo.paper:paper-api:1.15.2-R0.1-SNAPSHOT")
-    compileOnly("io.lumine.xikage:MythicMobs:4.12.0")
+    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
+    compileOnly("io.lumine:Mythic-Dist:5.12.0")
     compileOnly("net.azisaba:lifepvelevel:1.3.0")
     compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")
 }
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(8)
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
 tasks {
     withType<JavaCompile> {
         options.encoding = "UTF-8"
+        options.compilerArgs.add("-Xlint:deprecation")
     }
 
     processResources {

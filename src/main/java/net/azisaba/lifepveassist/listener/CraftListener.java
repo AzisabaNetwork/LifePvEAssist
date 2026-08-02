@@ -1,6 +1,8 @@
 package net.azisaba.lifepveassist.listener;
 
 import net.azisaba.lifepveassist.gui.CraftHolder;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -18,23 +20,27 @@ public class CraftListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getInventory().getHolder() instanceof CraftHolder) {
-             event.setCancelled(true);
+            event.setCancelled(true);
             ItemStack cursorItem = event.getCursor();
             ItemStack clickedItem = event.getCurrentItem();
             if (cursorItem != null && cursorItem.hasItemMeta() && cursorItem.getItemMeta() != null) {
-                List<String> lore = cursorItem.getItemMeta().getLore();
-                if (lore == null) return;
-                for (String line : lore) {
-                    if (line.contains("[LifeCraft]")) {
-                        this.set(cursorItem, event.getInventory());
+                List<Component> lore = cursorItem.getItemMeta().lore();
+                if (lore != null) {
+                    for (Component lineComp : lore) {
+                        String line = PlainTextComponentSerializer.plainText().serialize(lineComp);
+                        if (line.contains("[LifeCraft]")) {
+                            this.set(cursorItem, event.getInventory());
+                        }
                     }
                 }
             } else if (clickedItem != null && clickedItem.hasItemMeta() && clickedItem.getItemMeta() != null) {
-                List<String> lore = clickedItem.getItemMeta().getLore();
-                if (lore == null) return;
-                for (String line : lore) {
-                    if (line.contains("[LifeCraft]")) {
-                        this.set(clickedItem, event.getInventory());
+                List<Component> lore = clickedItem.getItemMeta().lore();
+                if (lore != null) {
+                    for (Component lineComp : lore) {
+                        String line = PlainTextComponentSerializer.plainText().serialize(lineComp);
+                        if (line.contains("[LifeCraft]")) {
+                            this.set(clickedItem, event.getInventory());
+                        }
                     }
                 }
             }

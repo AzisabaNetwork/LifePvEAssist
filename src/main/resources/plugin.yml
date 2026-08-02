@@ -1,6 +1,17 @@
 name: LifePvEAssist
 version: '${version}'
 main: net.azisaba.lifepveassist.LifePvEAssist
-api-version: '1.15'
+api-version: '1.21'
 author: Azisaba Network
 
+commands:
+  lifepveassist:
+    description: LifePvEAssist main command
+    permission: lifepveassist.command.lifecraft
+  blocking:
+    description: Toggle repair/salvage blocking
+
+permissions:
+  lifepveassist.command.lifecraft:
+    description: Allows using the /lifepveassist command
+    default: op
