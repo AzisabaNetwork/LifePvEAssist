@@ -79,6 +79,10 @@ public class LifeCraftListener implements Listener {
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getInventory().getHolder() instanceof LifeCraftHolder)) {
+            return;
+        }
+
         if (event.getPlayer().getPersistentDataContainer().has(new NamespacedKey(LifePvEAssist.getInstance(), "open"), PersistentDataType.INTEGER)) {
             event.getPlayer().getPersistentDataContainer().remove(new NamespacedKey(LifePvEAssist.getInstance(), "open"));
             return;
