@@ -1,14 +1,19 @@
 name: Build
 
 on:
+  # push は長期ブランチのみ。/ PR がある作業ブランチは pull_request 側で 1 回だけ走らせる
   push:
-    branches: [main, "ver/**", "feat/**"]
+    branches: [main, "ver/**"]
     paths-ignore:
       - "**.md"
   pull_request:
-    branches: [main, "ver/**", "feat/**"]
+    branches: [main, "ver/**"]
     paths-ignore:
       - "**.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions: {}
 
