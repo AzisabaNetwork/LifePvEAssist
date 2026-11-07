@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+    branches: [main, "ver/**", "feat/**"]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    branches: [main, "ver/**", "feat/**"]
+    paths-ignore:
+      - "**.md"
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build with Java 21
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          java-version: "21"
+          distribution: temurin
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon
+
+      - name: Upload artifact
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: LifePvEAssist
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 7
