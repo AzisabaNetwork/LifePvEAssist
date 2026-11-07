@@ -1,1 +1,16 @@
+# PvP を許可するワールド名の一覧 (ここにないワールドではプレイヤー間ダメージを無効化)
 pvp-enabled-worlds: []
+
+# FFN から統合した採掘 (Gathering) 設定
+ffn:
+  # 採掘ドロップ処理を行うワールド
+  GatherWorlds:
+    - FFTrial
+
+  # 同一座標の再採掘を抑制する秒数
+  GatherDelaySeconds: 30
+
+  # %digger% のみ置換可能
+  GatherList:
+  #STONE:
+  #- "mlg %digger% ffnDrop2 1 1"
