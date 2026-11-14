@@ -4,8 +4,10 @@ import io.lumine.mythic.bukkit.MythicBukkit;
 import net.azisaba.lifepveassist.LifePvEAssist;
 import net.azisaba.lifepveassist.gui.CreateInventory;
 import net.azisaba.lifepveassist.gui.LifeCraftHolder;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -17,56 +19,63 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class LifeCraftListener implements Listener {
 
-    public LifeCraftListener() {}
+    /** 鉱石ブロックを置ける入力スロット */
+    private static final int INPUT_START = 10;
+    private static final int INPUT_END = 16;
 
-    public static final List<ItemStack> list = new ArrayList<>();
-    public static Map<Player, List<ItemStack>> map = new HashMap<>();
+    /** step1 で預かった鉱石ブロック (step2 を閉じたときに返却する) */
+    public static final Map<UUID, List<ItemStack>> map = new ConcurrentHashMap<>();
+
+    public LifeCraftListener() {}
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
-        if (event.getInventory().getHolder() instanceof LifeCraftHolder) {
-            event.setCancelled(true);
-            ItemStack cursorItem = event.getCursor();
-            ItemStack currentItem = event.getCurrentItem();
-            ItemStack itemStack1 = MythicBukkit.inst().getItemManager().getItemStack("compressed_diamond_block");
-            ItemStack itemStack2 = MythicBukkit.inst().getItemManager().getItemStack("compressed_iron_block");
-            ItemStack itemStack3 = MythicBukkit.inst().getItemManager().getItemStack("compressed_gold_block");
-            Inventory inventory = event.getInventory();
-            Inventory clickedInventory = event.getClickedInventory();
-            if (currentItem != null && currentItem.hasItemMeta() && currentItem.getType().equals(Material.WHITE_STAINED_GLASS_PANE) && currentItem.getItemMeta() != null && currentItem.getItemMeta().hasCustomModelData() && currentItem.getItemMeta().getCustomModelData() == 1 && clickedInventory != null && itemStack1 != null && itemStack2 != null && itemStack3 != null && (clickedInventory.contains(itemStack1) || clickedInventory.contains(itemStack2) || clickedInventory.contains(itemStack3))) {
-                for (ItemStack setItem : event.getInventory().getContents()) {
-                    if (setItem != null && !setItem.getType().equals(Material.AIR) && (setItem.getType().equals(itemStack1.getType()) || setItem.getType().equals(itemStack2.getType()) || setItem.getType().equals(itemStack3.getType()))) {
-                        list.add(setItem);
-                        map.put((Player) event.getWhoClicked(), list);
-                    }
-                }
-                event.getWhoClicked().getPersistentDataContainer().set(new NamespacedKey(LifePvEAssist.getInstance(), "lifecraft"), PersistentDataType.INTEGER, 1);
-                new CreateInventory().step2(((Player) event.getWhoClicked()).getPlayer());
-            }
+        if (!(event.getInventory().getHolder() instanceof LifeCraftHolder)) return;
+        event.setCancelled(true);
+        if (!(event.getWhoClicked() instanceof Player player)) return;
 
-            if (cursorItem != null && currentItem.hasItemMeta() && itemStack1 != null && itemStack2 != null && itemStack3 != null) {
-                if (cursorItem.isSimilar(itemStack1)) {
-                    set(cursorItem, inventory);
-                } else if (cursorItem.isSimilar(itemStack2)) {
-                    set(cursorItem, inventory);
-                } else if (cursorItem.isSimilar(itemStack3)) {
-                    set(cursorItem, inventory);
-                }
-            } else if (currentItem != null && currentItem.hasItemMeta() && itemStack1 != null && itemStack2 != null && itemStack3 != null) {
-                if (currentItem.isSimilar(itemStack1)) {
-                    set(currentItem, inventory);
-                } else if (currentItem.isSimilar(itemStack2)) {
-                    set(currentItem, inventory);
-                } else if (currentItem.isSimilar(itemStack3)) {
-                    set(currentItem, inventory);
+        ItemStack itemStack1 = MythicBukkit.inst().getItemManager().getItemStack("compressed_diamond_block");
+        ItemStack itemStack2 = MythicBukkit.inst().getItemManager().getItemStack("compressed_iron_block");
+        ItemStack itemStack3 = MythicBukkit.inst().getItemManager().getItemStack("compressed_gold_block");
+        if (itemStack1 == null || itemStack2 == null || itemStack3 == null) return;
+
+        Inventory inventory = event.getInventory();
+        ItemStack cursorItem = event.getCursor();
+        ItemStack currentItem = event.getCurrentItem();
+
+        // 次へボタン
+        if (event.getClickedInventory() == inventory && isNextButton(currentItem)) {
+            List<ItemStack> stored = new ArrayList<>();
+            for (int i = INPUT_START; i <= INPUT_END; i++) {
+                ItemStack item = inventory.getItem(i);
+                if (item != null && !item.getType().isAir()) {
+                    stored.add(item.clone());
+                    // GUIから取り除いておくことで、閉じたときの二重返却を防ぐ
+                    inventory.setItem(i, null);
                 }
             }
+            if (stored.isEmpty()) return;
+            map.merge(player.getUniqueId(), stored, (a, b) -> { a.addAll(b); return a; });
+            player.getPersistentDataContainer().set(new NamespacedKey(LifePvEAssist.getInstance(), "lifecraft"), PersistentDataType.INTEGER, 1);
+            // クリックイベント中にインベントリを開き直さないよう次tickで開く
+            Bukkit.getScheduler().runTask(LifePvEAssist.getInstance(), () -> new CreateInventory().step2(player));
+            return;
+        }
+
+        if (cursorItem != null && !cursorItem.getType().isAir()) {
+            if (isTarget(cursorItem, itemStack1, itemStack2, itemStack3)) {
+                set(cursorItem, inventory);
+            }
+        } else if (currentItem != null && event.getClickedInventory() != inventory
+                && isTarget(currentItem, itemStack1, itemStack2, itemStack3)) {
+            set(currentItem, inventory);
         }
     }
 
@@ -79,34 +88,43 @@ public class LifeCraftListener implements Listener {
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
-        if (event.getPlayer().getPersistentDataContainer().has(new NamespacedKey(LifePvEAssist.getInstance(), "open"), PersistentDataType.INTEGER)) {
-            event.getPlayer().getPersistentDataContainer().remove(new NamespacedKey(LifePvEAssist.getInstance(), "open"));
-            return;
-        }
-        for (ItemStack item : event.getInventory().getContents()) {
-            if (item != null && !item.getType().equals(Material.AIR) && (item.getType().equals(Material.DIAMOND_BLOCK) || item.getType().equals(Material.IRON_BLOCK) || item.getType().equals(Material.GOLD_BLOCK))) {
-                event.getPlayer().getInventory().addItem(item);
+        if (!(event.getInventory().getHolder() instanceof LifeCraftHolder)) return;
+        HumanEntity player = event.getPlayer();
+        Inventory inventory = event.getInventory();
+        for (int i = INPUT_START; i <= INPUT_END; i++) {
+            ItemStack item = inventory.getItem(i);
+            if (item != null && !item.getType().isAir()) {
+                inventory.setItem(i, null);
+                giveBack(player, item);
             }
-        }
-        if (!map.isEmpty() && map.containsKey(event.getPlayer())) {
-            for (ItemStack item : map.get(event.getPlayer())) {
-                event.getPlayer().getInventory().addItem(item);
-            }
-            map.remove(event.getPlayer());
-            list.clear();
         }
     }
 
+    public static void giveBack(HumanEntity player, ItemStack item) {
+        player.getInventory().addItem(item).values()
+                .forEach(left -> player.getWorld().dropItem(player.getLocation(), left));
+    }
+
+    private boolean isNextButton(ItemStack item) {
+        return item != null && item.getType() == Material.WHITE_STAINED_GLASS_PANE && item.hasItemMeta()
+                && item.getItemMeta().hasCustomModelData() && item.getItemMeta().getCustomModelData() == 1;
+    }
+
+    private boolean isTarget(ItemStack item, ItemStack... targets) {
+        for (ItemStack target : targets) {
+            if (item.isSimilar(target)) return true;
+        }
+        return false;
+    }
+
     public void set(ItemStack item, Inventory inv) {
-        if (item != null) {
-            for(int i = 10; i <= 16; ++i) {
-                if (inv.getItem(i) == null && item.getAmount() >= 1) {
-                    ItemStack itemStack = new ItemStack(item);
-                    itemStack.setAmount(1);
-                    inv.setItem(i, itemStack);
-                    item.setAmount(item.getAmount() - 1);
-                    break;
-                }
+        for (int i = INPUT_START; i <= INPUT_END; ++i) {
+            if (inv.getItem(i) == null && item.getAmount() >= 1) {
+                ItemStack itemStack = new ItemStack(item);
+                itemStack.setAmount(1);
+                inv.setItem(i, itemStack);
+                item.setAmount(item.getAmount() - 1);
+                break;
             }
         }
     }

@@ -15,6 +15,8 @@ import java.util.List;
 
 public class CraftListener implements Listener {
 
+    private static final int[][] INPUT_RANGES = {{10, 16}, {19, 25}, {28, 34}, {37, 43}};
+
     public CraftListener() {}
 
     @EventHandler
@@ -56,13 +58,23 @@ public class CraftListener implements Listener {
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
-        if (event.getInventory().getHolder() instanceof CraftHolder && !LifeCraftListener.map.isEmpty() && LifeCraftListener.map.containsKey(event.getPlayer())) {
-            for(ItemStack item : LifeCraftListener.map.get(event.getPlayer())) {
-                event.getPlayer().getInventory().addItem(item);
+        if (!(event.getInventory().getHolder() instanceof CraftHolder)) return;
+        List<ItemStack> stored = LifeCraftListener.map.remove(event.getPlayer().getUniqueId());
+        if (stored != null) {
+            for (ItemStack item : stored) {
+                LifeCraftListener.giveBack(event.getPlayer(), item);
             }
-
-            LifeCraftListener.map.remove(event.getPlayer());
-            LifeCraftListener.list.clear();
+        }
+        // step2 に置いた [LifeCraft] アイテムも返却する (返さないと消失する)
+        Inventory inventory = event.getInventory();
+        for (int[] range : INPUT_RANGES) {
+            for (int i = range[0]; i <= range[1]; i++) {
+                ItemStack item = inventory.getItem(i);
+                if (item != null && !item.getType().isAir()) {
+                    inventory.setItem(i, null);
+                    LifeCraftListener.giveBack(event.getPlayer(), item);
+                }
+            }
         }
     }
 
