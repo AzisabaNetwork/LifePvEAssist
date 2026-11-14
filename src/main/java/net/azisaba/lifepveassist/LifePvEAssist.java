@@ -3,6 +3,8 @@ package net.azisaba.lifepveassist;
 import com.github.retrooper.packetevents.PacketEvents;
 import net.azisaba.lifepveassist.command.LifePvEAssistCommand;
 import net.azisaba.lifepveassist.ffn.FFN;
+import net.azisaba.lifepveassist.losingcats.LosingCats;
+import net.azisaba.lifepveassist.killerschocolate.KillerChocolateListener;
 import net.azisaba.lifepveassist.listener.CraftListener;
 import net.azisaba.lifepveassist.listener.LifeCraftListener;
 import net.azisaba.lifepveassist.listener.PvPCancelListener;
@@ -45,6 +47,9 @@ public final class LifePvEAssist extends JavaPlugin {
         pluginManager.registerEvents(new PlayerJoinListener(this), this);
 
         FFN.register(this);
+
+        pluginManager.registerEvents(new KillerChocolateListener(), this);
+        pluginManager.registerEvents(new LosingCats(this), this);
 
         PacketEvents.getAPI().getEventManager().registerListener(new PacketListenerImpl());
 

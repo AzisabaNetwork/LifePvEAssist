@@ -51,5 +51,6 @@ jobs:
         with:
           name: LifePvEAssist
           path: build/libs/*.jar
+          exclusion-patterns: ["*-plain.jar"]
           if-no-files-found: error
           retention-days: 7

@@ -1,9 +1,10 @@
 name: LifePvEAssist
 version: '${version}'
 main: net.azisaba.lifepveassist.LifePvEAssist
-api-version: '1.21'
+api-version: '1.21.11'
 author: Azisaba Network
 depend: [ MythicMobs ]
+softdepend: [ Vault ]
 
 commands:
   lifepveassist:
