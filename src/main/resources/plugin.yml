@@ -4,7 +4,7 @@ main: net.azisaba.lifepveassist.LifePvEAssist
 api-version: '1.21.11'
 author: Azisaba Network
 depend: [ MythicMobs ]
-softdepend: [ Vault ]
+softdepend: [ Vault, WorldEdit, FastAsyncWorldEdit ]
 
 commands:
   lifepveassist:

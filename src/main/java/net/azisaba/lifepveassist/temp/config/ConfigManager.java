@@ -1,7 +1,6 @@
 package net.azisaba.lifepveassist.temp.config;
 
 import net.kyori.adventure.bossbar.BossBar;
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
@@ -103,9 +102,19 @@ public class ConfigManager {
     private String statusColdStage1 = "<aqua>[低温注意]";
     private String statusColdStage2 = "<blue><bold>[低温危険]";
 
+    // database
+    private String databaseType = "sqlite";
+    private String databaseSqliteFile = "temp/playerdata.db";
+    private String databaseHost = "localhost";
+    private int databasePort = 3306;
+    private String databaseName = "lifepveassist";
+    private String databaseUsername = "root";
+    private String databasePassword = "";
+    private String databaseTablePrefix = "lifetemp_";
+    private int databasePoolSize = 4;
+    private boolean databaseUseSsl = false;
+
     // zones
-    private Material wandMaterial = Material.BLAZE_ROD;
-    private String wandName = "<gold><bold>温度エリア選択ワンド";
     private int previewDurationSeconds = 10;
 
     public ConfigManager(JavaPlugin plugin) {
@@ -224,11 +233,19 @@ public class ConfigManager {
         this.statusColdStage1 = cfg.getString("bossbar.status-labels.cold-stage1", this.statusColdStage1);
         this.statusColdStage2 = cfg.getString("bossbar.status-labels.cold-stage2", this.statusColdStage2);
 
+        // database
+        this.databaseType = cfg.getString("database.type", "sqlite");
+        this.databaseSqliteFile = cfg.getString("database.sqlite-file", "temp/playerdata.db");
+        this.databaseHost = cfg.getString("database.host", "localhost");
+        this.databasePort = cfg.getInt("database.port", 3306);
+        this.databaseName = cfg.getString("database.database", "lifepveassist");
+        this.databaseUsername = cfg.getString("database.username", "root");
+        this.databasePassword = cfg.getString("database.password", "");
+        this.databaseTablePrefix = cfg.getString("database.table-prefix", "lifetemp_");
+        this.databasePoolSize = Math.max(1, cfg.getInt("database.pool-size", 4));
+        this.databaseUseSsl = cfg.getBoolean("database.use-ssl", false);
+
         // zones
-        String matName = cfg.getString("zones.wand-material", "BLAZE_ROD").toUpperCase(Locale.ROOT);
-        Material mat = Material.matchMaterial(matName);
-        this.wandMaterial = (mat != null && mat.isItem()) ? mat : Material.BLAZE_ROD;
-        this.wandName = cfg.getString("zones.wand-name", this.wandName);
         this.previewDurationSeconds = Math.max(1, cfg.getInt("zones.preview-duration-seconds", 10));
     }
 
@@ -305,7 +322,15 @@ public class ConfigManager {
     public String getStatusHotStage2() { return statusHotStage2; }
     public String getStatusColdStage1() { return statusColdStage1; }
     public String getStatusColdStage2() { return statusColdStage2; }
-    public Material getWandMaterial() { return wandMaterial; }
-    public String getWandName() { return wandName; }
+    public String getDatabaseType() { return databaseType; }
+    public String getDatabaseSqliteFile() { return databaseSqliteFile; }
+    public String getDatabaseHost() { return databaseHost; }
+    public int getDatabasePort() { return databasePort; }
+    public String getDatabaseName() { return databaseName; }
+    public String getDatabaseUsername() { return databaseUsername; }
+    public String getDatabasePassword() { return databasePassword; }
+    public String getDatabaseTablePrefix() { return databaseTablePrefix; }
+    public int getDatabasePoolSize() { return databasePoolSize; }
+    public boolean isDatabaseUseSsl() { return databaseUseSsl; }
     public int getPreviewDurationSeconds() { return previewDurationSeconds; }
 }

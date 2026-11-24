@@ -30,9 +30,24 @@ lifecycle:
   reset-on-death: true
   # クリエイティブ・スペクテイターモード時はデメリットや即死を無効化するか
   ignore-creative-spectator: true
-  # プレイヤーデータ保存先ファイル (plugins/LifePvEAssist/temp/playerdata.yml)
-  # ※PDC(プレイヤー本体)と併用してリログイン時も確実に維持します
+  # 全オンラインプレイヤー温度のDB定期フラッシュ間隔 (秒)
   save-interval-seconds: 300
+
+# データベース設定（プレイヤー温度の永続化）
+database:
+  # sqlite または mysql (MariaDB含む)
+  type: "sqlite"
+  # SQLite 使用時のファイルパス (plugins/LifePvEAssist/ からの相対パス)
+  sqlite-file: "temp/playerdata.db"
+  # MySQL / MariaDB 接続設定
+  host: "localhost"
+  port: 3306
+  database: "lifepveassist"
+  username: "root"
+  password: ""
+  table-prefix: "lifetemp_"
+  pool-size: 4
+  use-ssl: false
 
 # 専用防具（耐熱・耐冷）の設定
 armor:
@@ -125,8 +140,7 @@ bossbar:
     cold-stage1: "<aqua>[低温注意]"
     cold-stage2: "<blue><bold>[低温危険]"
 
-# 空間での継続温度変化エリア（WorldEdit風範囲指定）の設定
+# 空間での継続温度変化エリア（WorldEdit 選択範囲連携 + Display エンティティ表示）
 zones:
-  wand-material: "BLAZE_ROD"
-  wand-name: "<gold><bold>温度エリア選択ワンド"
+  # エリア境界プレビュー (/ltm zone show) の表示時間 (秒)
   preview-duration-seconds: 10

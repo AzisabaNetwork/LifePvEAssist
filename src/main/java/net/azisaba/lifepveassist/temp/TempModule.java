@@ -10,7 +10,6 @@ import net.azisaba.lifepveassist.temp.storage.TemperatureStorage;
 import net.azisaba.lifepveassist.temp.ui.BossBarController;
 import net.azisaba.lifepveassist.temp.ui.WarningController;
 import net.azisaba.lifepveassist.temp.zone.ZoneManager;
-import net.azisaba.lifepveassist.temp.zone.ZoneWandListener;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -35,7 +34,7 @@ public final class TempModule {
     public static void register(JavaPlugin plugin) {
         configManager = new ConfigManager(plugin);
         armorInspector = new ArmorInspector(plugin, configManager);
-        storage = new TemperatureStorage(plugin);
+        storage = new TemperatureStorage(plugin, configManager);
         bossBarController = new BossBarController(configManager);
         warningController = new WarningController(configManager);
         temperatureManager = new TemperatureManager(
@@ -43,8 +42,7 @@ public final class TempModule {
         );
         zoneManager = new ZoneManager(plugin, configManager, temperatureManager);
 
-        Bukkit.getPluginManager().registerEvents(new PlayerLifecycleListener(temperatureManager), plugin);
-        Bukkit.getPluginManager().registerEvents(new ZoneWandListener(zoneManager, configManager), plugin);
+        Bukkit.getPluginManager().registerEvents(new PlayerLifecycleListener(temperatureManager, zoneManager), plugin);
 
         if (Bukkit.getPluginManager().getPlugin("MythicMobs") != null) {
             MythicMobsHook mythicHook = new MythicMobsHook(plugin, configManager, temperatureManager);

@@ -7,8 +7,8 @@ import net.azisaba.lifepveassist.temp.model.ArmorResistance;
 import net.azisaba.lifepveassist.temp.model.TemperatureEvaluation;
 import net.azisaba.lifepveassist.temp.ui.BossBarController;
 import net.azisaba.lifepveassist.temp.zone.TemperatureZone;
+import net.azisaba.lifepveassist.temp.zone.WorldEditSelectionProvider;
 import net.azisaba.lifepveassist.temp.zone.ZoneManager;
-import net.azisaba.lifepveassist.temp.zone.ZoneSelection;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -259,43 +259,11 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
             return;
         }
         if (args.length < 2) {
-            msg(sender, "<red>使用法: /ltm zone <wand|pos1|pos2|create|delete|list|info|show|tp>");
+            msg(sender, "<red>使用法: /ltm zone <create|delete|list|info|show|hide|tp>");
             return;
         }
         String action = args[1].toLowerCase(Locale.ROOT);
         switch (action) {
-            case "wand" -> {
-                if (!(sender instanceof Player player)) {
-                    msg(sender, "<red>このコマンドはプレイヤーのみ実行できます。");
-                    return;
-                }
-                player.getInventory().addItem(zoneManager.createWandItem());
-                msg(sender, "<green>温度エリア選択ワンドを付与しました。<gray>(左クリック: pos1 / 右クリック: pos2)");
-            }
-            case "pos1" -> {
-                if (!(sender instanceof Player player)) {
-                    msg(sender, "<red>このコマンドはプレイヤーのみ実行できます。");
-                    return;
-                }
-                ZoneSelection sel = zoneManager.getSelection(player);
-                sel.setPos1(player.getLocation());
-                msg(sender, "<green>pos1 を足元座標に設定しました: <yellow>("
-                        + player.getLocation().getBlockX() + ", "
-                        + player.getLocation().getBlockY() + ", "
-                        + player.getLocation().getBlockZ() + ")");
-            }
-            case "pos2" -> {
-                if (!(sender instanceof Player player)) {
-                    msg(sender, "<red>このコマンドはプレイヤーのみ実行できます。");
-                    return;
-                }
-                ZoneSelection sel = zoneManager.getSelection(player);
-                sel.setPos2(player.getLocation());
-                msg(sender, "<green>pos2 を足元座標に設定しました: <yellow>("
-                        + player.getLocation().getBlockX() + ", "
-                        + player.getLocation().getBlockY() + ", "
-                        + player.getLocation().getBlockZ() + ")");
-            }
             case "create" -> {
                 if (!(sender instanceof Player player)) {
                     msg(sender, "<red>このコマンドはプレイヤーのみ実行できます。");
@@ -303,6 +271,7 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
                 }
                 if (args.length < 5) {
                     msg(sender, "<red>使用法: /ltm zone create <エリア名> <変化量(例:5 / -5)> <間隔秒(例:10)>");
+                    msg(sender, "<gray>※先に WorldEdit (//wand, //pos1, //pos2 等) で範囲を選択してください。");
                     return;
                 }
                 String name = args[2];
@@ -316,12 +285,12 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
                     msg(sender, "<red>間隔秒は1以上の整数で指定してください。");
                     return;
                 }
-                ZoneSelection sel = zoneManager.getSelection(player);
-                if (!sel.isComplete()) {
-                    msg(sender, "<red>同一ワールド内で pos1 と pos2 の両方を先に選択してください。");
+                WorldEditSelectionProvider.SelectionResult result = WorldEditSelectionProvider.getSelection(player);
+                if (!result.isSuccess()) {
+                    msg(sender, "<red>" + result.errorMessage());
                     return;
                 }
-                TemperatureZone zone = sel.toZone(name, delta, interval);
+                TemperatureZone zone = result.bounds().toZone(name, delta, interval);
                 zoneManager.addZone(zone);
                 msg(sender, "<green>温度エリア <yellow>" + zone.name() + " <green>を登録しました！ "
                         + "<gray>(" + zone.worldName() + " / " + interval + "秒ごとに "
@@ -386,7 +355,15 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
                 }
                 zoneManager.showZonePreview(player, z);
                 msg(sender, "<green>エリア <yellow>" + z.name() + " <green>の境界を "
-                        + config.getPreviewDurationSeconds() + "秒間表示します。");
+                        + config.getPreviewDurationSeconds() + "秒間 Display 表示します。");
+            }
+            case "hide" -> {
+                if (!(sender instanceof Player player)) {
+                    msg(sender, "<red>このコマンドはプレイヤーのみ実行できます。");
+                    return;
+                }
+                zoneManager.clearPreview(player.getUniqueId());
+                msg(sender, "<green>エリア境界の表示を消去しました。");
             }
             case "tp" -> {
                 if (!(sender instanceof Player player)) {
@@ -410,7 +387,7 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
                 player.teleport(new Location(world, z.centerX(), z.centerY(), z.centerZ()));
                 msg(sender, "<green>エリア <yellow>" + z.name() + " <green>の中心へテレポートしました。");
             }
-            default -> msg(sender, "<red>使用法: /ltm zone <wand|pos1|pos2|create|delete|list|info|show|tp>");
+            default -> msg(sender, "<red>使用法: /ltm zone <create|delete|list|info|show|hide|tp>");
         }
     }
 
@@ -430,7 +407,7 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
             msg(sender, "<gold>/" + label + " add <player> <変化量> <gray>- 温度を加算/減算");
             msg(sender, "<gold>/" + label + " reset <player> <gray>- 温度をデフォルト値にリセット");
             msg(sender, "<gold>/" + label + " armor <set|clear|inspect> <gray>- 手持ち防具の耐性タグ操作");
-            msg(sender, "<gold>/" + label + " zone <wand|pos1|pos2|create|delete|list|info|show|tp> <gray>- 空間温度エリア管理");
+            msg(sender, "<gold>/" + label + " zone <create|delete|list|info|show|hide|tp> <gray>- 空間温度エリア管理 (WorldEdit選択連携)");
             msg(sender, "<gold>/" + label + " reload <gray>- 設定をリロード");
         }
     }
@@ -485,7 +462,7 @@ public class LifeTempCommand implements CommandExecutor, TabCompleter {
             return switch (sub) {
                 case "info", "set", "add", "reset" -> filterPrefix(onlinePlayerNames(), args[1]);
                 case "armor" -> filterPrefix(List.of("set", "clear", "inspect"), args[1]);
-                case "zone" -> filterPrefix(List.of("wand", "pos1", "pos2", "create", "delete", "list", "info", "show", "tp"), args[1]);
+                case "zone" -> filterPrefix(List.of("create", "delete", "list", "info", "show", "hide", "tp"), args[1]);
                 default -> List.of();
             };
         }

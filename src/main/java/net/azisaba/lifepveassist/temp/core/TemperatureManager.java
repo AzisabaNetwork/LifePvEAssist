@@ -95,14 +95,18 @@ public class TemperatureManager {
             autoSaveTask = null;
         }
 
+        Map<UUID, Double> snapshot = new HashMap<>();
         for (Player player : Bukkit.getOnlinePlayers()) {
             PlayerTemperatureData data = playerDataMap.get(player.getUniqueId());
             if (data != null) {
                 clearVisualEffects(player, data);
-                storage.savePlayer(player, data.getTemperature());
+                snapshot.put(player.getUniqueId(), data.getTemperature());
             }
         }
-        saveAllPlayers();
+        for (Map.Entry<UUID, PlayerTemperatureData> entry : playerDataMap.entrySet()) {
+            snapshot.putIfAbsent(entry.getKey(), entry.getValue().getTemperature());
+        }
+        storage.flushAllSyncAndClose(snapshot);
         bossBarController.clearAll();
         playerDataMap.clear();
     }
@@ -112,9 +116,25 @@ public class TemperatureManager {
     }
 
     private PlayerTemperatureData loadPlayer(Player player, long now) {
-        double savedTemp = storage.load(player, config.getDefaultTemp());
-        PlayerTemperatureData data = new PlayerTemperatureData(player.getUniqueId(), savedTemp, now);
-        playerDataMap.put(player.getUniqueId(), data);
+        UUID uuid = player.getUniqueId();
+        PlayerTemperatureData data = new PlayerTemperatureData(uuid, config.getDefaultTemp(), now);
+        playerDataMap.put(uuid, data);
+
+        storage.loadAsync(uuid, config.getDefaultTemp()).thenAccept(savedTemp ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    PlayerTemperatureData current = playerDataMap.get(uuid);
+                    if (current == null) {
+                        return;
+                    }
+                    current.setTemperature(savedTemp);
+                    if (config.isEnabledWorld(player.getWorld())) {
+                        evaluateAndApply(player, current, System.currentTimeMillis(), false);
+                    }
+                })
+        );
         return data;
     }
 
@@ -122,8 +142,7 @@ public class TemperatureManager {
         PlayerTemperatureData data = playerDataMap.remove(player.getUniqueId());
         if (data != null) {
             clearVisualEffects(player, data);
-            storage.savePlayer(player, data.getTemperature());
-            storage.saveFile();
+            storage.saveAsync(player.getUniqueId(), data.getTemperature());
         }
         bossBarController.hide(player);
     }
@@ -151,7 +170,7 @@ public class TemperatureManager {
             data.setLastExternalChangeMillis(System.currentTimeMillis());
             data.setLastWarningMillis(0L);
             data.setLastDamageMillis(0L);
-            storage.savePlayer(player, data.getTemperature());
+            storage.saveAsync(player.getUniqueId(), data.getTemperature());
         }
     }
 
@@ -163,7 +182,7 @@ public class TemperatureManager {
     public PlayerTemperatureData getOrCreateData(Player player) {
         return playerDataMap.computeIfAbsent(
                 player.getUniqueId(),
-                uuid -> new PlayerTemperatureData(uuid, storage.load(player, config.getDefaultTemp()), System.currentTimeMillis())
+                uuid -> new PlayerTemperatureData(uuid, config.getDefaultTemp(), System.currentTimeMillis())
         );
     }
 
@@ -184,7 +203,7 @@ public class TemperatureManager {
         if (resetRecoveryTimer) {
             data.setLastExternalChangeMillis(now);
         }
-        storage.savePlayer(player, data.getTemperature());
+        storage.saveAsync(player.getUniqueId(), data.getTemperature());
         evaluateAndApply(player, data, now, false);
     }
 
@@ -198,7 +217,7 @@ public class TemperatureManager {
         if (resetRecoveryTimer) {
             data.setLastExternalChangeMillis(now);
         }
-        storage.savePlayer(player, data.getTemperature());
+        storage.saveAsync(player.getUniqueId(), data.getTemperature());
         if (config.isEnabledWorld(player.getWorld())) {
             evaluateAndApply(player, data, now, false);
         }
@@ -229,12 +248,8 @@ public class TemperatureManager {
         Map<UUID, Double> snapshot = new HashMap<>();
         for (Map.Entry<UUID, PlayerTemperatureData> entry : playerDataMap.entrySet()) {
             snapshot.put(entry.getKey(), entry.getValue().getTemperature());
-            Player online = Bukkit.getPlayer(entry.getKey());
-            if (online != null) {
-                storage.savePlayer(online, entry.getValue().getTemperature());
-            }
         }
-        storage.flushAll(snapshot);
+        storage.flushAllAsync(snapshot);
     }
 
     private void tickAllPlayers() {
@@ -264,7 +279,7 @@ public class TemperatureManager {
                     double next = TemperatureCalculator.stepRecovery(
                             current, defaultTemp, config.getRecoveryRatePerSecond());
                     data.setTemperature(next);
-                    storage.savePlayer(player, next);
+                    storage.saveAsync(player.getUniqueId(), next);
                 }
             }
 

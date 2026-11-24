@@ -1,6 +1,7 @@
 package net.azisaba.lifepveassist.temp.listener;
 
 import net.azisaba.lifepveassist.temp.core.TemperatureManager;
+import net.azisaba.lifepveassist.temp.zone.ZoneManager;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -18,9 +19,11 @@ import org.bukkit.event.player.PlayerRespawnEvent;
 public class PlayerLifecycleListener implements Listener {
 
     private final TemperatureManager temperatureManager;
+    private final ZoneManager zoneManager;
 
-    public PlayerLifecycleListener(TemperatureManager temperatureManager) {
+    public PlayerLifecycleListener(TemperatureManager temperatureManager, ZoneManager zoneManager) {
         this.temperatureManager = temperatureManager;
+        this.zoneManager = zoneManager;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -33,6 +36,7 @@ public class PlayerLifecycleListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         temperatureManager.unloadPlayer(event.getPlayer());
+        zoneManager.clearPreview(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

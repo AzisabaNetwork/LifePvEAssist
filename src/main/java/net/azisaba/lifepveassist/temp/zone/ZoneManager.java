@@ -2,25 +2,30 @@ package net.azisaba.lifepveassist.temp.zone;
 
 import net.azisaba.lifepveassist.temp.config.ConfigManager;
 import net.azisaba.lifepveassist.temp.core.TemperatureManager;
-import net.kyori.adventure.text.Component;
+import net.azisaba.lifepveassist.temp.ui.BossBarController;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
-import org.bukkit.NamespacedKey;
-import org.bukkit.Particle;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Display;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Transformation;
+import org.joml.AxisAngle4f;
+import org.joml.Vector3f;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -32,20 +37,34 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
- * 空間温度変化エリアの登録・保存・定期適用・ワンド選択・境界可視化を管理するマネージャ。
+ * 空間温度変化エリアの登録・保存・定期適用、および BlockDisplay / TextDisplay による
+ * 軽量な境界プレビューを管理するマネージャ。
  */
 public class ZoneManager {
 
     private static final MiniMessage MINI = MiniMessage.miniMessage();
+    private static final float EDGE_THICKNESS = 0.08f;
+
+    private record ActivePreview(List<Entity> entities, BukkitTask cleanupTask) {
+        void dispose() {
+            if (cleanupTask != null) {
+                cleanupTask.cancel();
+            }
+            for (Entity entity : entities) {
+                if (entity != null && entity.isValid()) {
+                    entity.remove();
+                }
+            }
+        }
+    }
 
     private final Plugin plugin;
     private final ConfigManager config;
     private final TemperatureManager temperatureManager;
-    private final NamespacedKey wandKey;
     private final File zonesFile;
 
     private final Map<String, TemperatureZone> zones = new LinkedHashMap<>();
-    private final Map<UUID, ZoneSelection> selections = new ConcurrentHashMap<>();
+    private final Map<UUID, ActivePreview> activePreviews = new ConcurrentHashMap<>();
 
     private BukkitTask zoneTickTask;
     private long elapsedSeconds = 0L;
@@ -54,7 +73,6 @@ public class ZoneManager {
         this.plugin = plugin;
         this.config = config;
         this.temperatureManager = temperatureManager;
-        this.wandKey = new NamespacedKey(plugin, "zone_wand");
         this.zonesFile = new File(new File(plugin.getDataFolder(), "temp"), "zones.yml");
     }
 
@@ -68,8 +86,8 @@ public class ZoneManager {
             zoneTickTask.cancel();
             zoneTickTask = null;
         }
+        clearAllPreviews();
         save();
-        selections.clear();
     }
 
     public void load() {
@@ -161,38 +179,6 @@ public class ZoneManager {
         return Collections.unmodifiableCollection(zones.values());
     }
 
-    public ZoneSelection getSelection(Player player) {
-        return selections.computeIfAbsent(player.getUniqueId(), uuid -> new ZoneSelection());
-    }
-
-    public void clearSelection(UUID uuid) {
-        selections.remove(uuid);
-    }
-
-    public ItemStack createWandItem() {
-        ItemStack item = new ItemStack(config.getWandMaterial());
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.displayName(MINI.deserialize(config.getWandName()));
-            meta.lore(List.of(
-                    MINI.deserialize("<gray>左クリック: <yellow>pos1 <gray>を設定"),
-                    MINI.deserialize("<gray>右クリック: <yellow>pos2 <gray>を設定"),
-                    MINI.deserialize("<dark_gray>/ltm zone create <名前> <変化量> <間隔秒>")
-            ));
-            meta.getPersistentDataContainer().set(wandKey, PersistentDataType.BYTE, (byte) 1);
-            item.setItemMeta(meta);
-        }
-        return item;
-    }
-
-    public boolean isWand(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-        ItemMeta meta = item.getItemMeta();
-        return meta != null && meta.getPersistentDataContainer().has(wandKey, PersistentDataType.BYTE);
-    }
-
     private void tickZones() {
         elapsedSeconds++;
         if (zones.isEmpty()) {
@@ -227,30 +213,34 @@ public class ZoneManager {
     }
 
     /**
-     * 指定したエリアの12辺をパーティクルで一定時間プレイヤーに表示します。
+     * 指定エリアの12辺を BlockDisplay、中央ラベルを TextDisplay で一定時間プレイヤー本人のみに表示します。
+     * すべて非永続 (persistent=false) かつ visibleByDefault=false で生成され、終了後に自動削除されます。
      */
     public void showZonePreview(Player player, TemperatureZone zone) {
-        int durationSeconds = config.getPreviewDurationSeconds();
-        int totalRuns = durationSeconds * 2; // 0.5秒ごと
-        Particle particle = zone.delta() > 0 ? Particle.FLAME
-                : (zone.delta() < 0 ? Particle.SNOWFLAKE : Particle.END_ROD);
+        clearPreview(player.getUniqueId());
 
-        final int[] count = {0};
-        BukkitTask[] holder = new BukkitTask[1];
-        holder[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (!player.isOnline() || !player.getWorld().getName().equalsIgnoreCase(zone.worldName())
-                    || count[0] >= totalRuns) {
-                if (holder[0] != null) {
-                    holder[0].cancel();
-                }
-                return;
-            }
-            count[0]++;
-            spawnBoxEdges(player, zone, particle);
-        }, 0L, 10L);
-    }
+        World world = Bukkit.getWorld(zone.worldName());
+        if (world == null || !world.equals(player.getWorld())) {
+            return;
+        }
 
-    private void spawnBoxEdges(Player player, TemperatureZone zone, Particle particle) {
+        Material blockMaterial;
+        Color glowColor;
+        String deltaColor;
+        if (zone.delta() > 0.0) {
+            blockMaterial = Material.RED_STAINED_GLASS;
+            glowColor = Color.RED;
+            deltaColor = "<red>+";
+        } else if (zone.delta() < 0.0) {
+            blockMaterial = Material.LIGHT_BLUE_STAINED_GLASS;
+            glowColor = Color.AQUA;
+            deltaColor = "<aqua>";
+        } else {
+            blockMaterial = Material.WHITE_STAINED_GLASS;
+            glowColor = Color.WHITE;
+            deltaColor = "<white>";
+        }
+
         double minX = zone.minX();
         double minY = zone.minY();
         double minZ = zone.minZ();
@@ -258,43 +248,94 @@ public class ZoneManager {
         double maxY = zone.maxY() + 1.0;
         double maxZ = zone.maxZ() + 1.0;
 
-        double stepX = Math.max(0.5, (maxX - minX) / 25.0);
-        double stepY = Math.max(0.5, (maxY - minY) / 25.0);
-        double stepZ = Math.max(0.5, (maxZ - minZ) / 25.0);
+        float lenX = (float) (maxX - minX);
+        float lenY = (float) (maxY - minY);
+        float lenZ = (float) (maxZ - minZ);
+        float t = EDGE_THICKNESS;
 
-        for (double x = minX; x <= maxX; x += stepX) {
-            spawnDot(player, particle, x, minY, minZ);
-            spawnDot(player, particle, x, minY, maxZ);
-            spawnDot(player, particle, x, maxY, minZ);
-            spawnDot(player, particle, x, maxY, maxZ);
-        }
-        for (double y = minY; y <= maxY; y += stepY) {
-            spawnDot(player, particle, minX, y, minZ);
-            spawnDot(player, particle, minX, y, maxZ);
-            spawnDot(player, particle, maxX, y, minZ);
-            spawnDot(player, particle, maxX, y, maxZ);
-        }
-        for (double z = minZ; z <= maxZ; z += stepZ) {
-            spawnDot(player, particle, minX, minY, z);
-            spawnDot(player, particle, minX, maxY, z);
-            spawnDot(player, particle, maxX, minY, z);
-            spawnDot(player, particle, maxX, maxY, z);
+        List<Entity> spawned = new ArrayList<>(13);
+
+        // X 軸方向の4辺
+        spawned.add(spawnEdge(player, world, minX, minY, minZ, lenX, t, t, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, minX, minY, maxZ - t, lenX, t, t, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, minX, maxY - t, minZ, lenX, t, t, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, minX, maxY - t, maxZ - t, lenX, t, t, blockMaterial, glowColor));
+
+        // Y 軸方向の4辺
+        spawned.add(spawnEdge(player, world, minX, minY, minZ, t, lenY, t, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, maxX - t, minY, minZ, t, lenY, t, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, minX, minY, maxZ - t, t, lenY, t, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, maxX - t, minY, maxZ - t, t, lenY, t, blockMaterial, glowColor));
+
+        // Z 軸方向の4辺
+        spawned.add(spawnEdge(player, world, minX, minY, minZ, t, t, lenZ, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, maxX - t, minY, minZ, t, t, lenZ, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, minX, maxY - t, minZ, t, t, lenZ, blockMaterial, glowColor));
+        spawned.add(spawnEdge(player, world, maxX - t, maxY - t, minZ, t, t, lenZ, blockMaterial, glowColor));
+
+        // 中央ラベル (TextDisplay)
+        Location center = new Location(world, zone.centerX(), zone.centerY(), zone.centerZ());
+        String label = "<gold><bold>[Zone: " + zone.name() + "]</bold>\n"
+                + deltaColor + BossBarController.formatTemp(zone.delta()) + "℃ <gray>/ " + zone.intervalSeconds() + "秒\n"
+                + "<dark_gray>(" + zone.minX() + "," + zone.minY() + "," + zone.minZ()
+                + ") ～ (" + zone.maxX() + "," + zone.maxY() + "," + zone.maxZ() + ")";
+        TextDisplay textDisplay = world.spawn(center, TextDisplay.class, display -> {
+            display.setPersistent(false);
+            display.setVisibleByDefault(false);
+            display.setBillboard(Display.Billboard.CENTER);
+            display.setSeeThrough(true);
+            display.setShadowed(true);
+            display.setBrightness(new Display.Brightness(15, 15));
+            display.text(MINI.deserialize(label));
+        });
+        player.showEntity(plugin, textDisplay);
+        spawned.add(textDisplay);
+
+        long durationTicks = config.getPreviewDurationSeconds() * 20L;
+        UUID playerUuid = player.getUniqueId();
+        BukkitTask cleanupTask = Bukkit.getScheduler().runTaskLater(plugin, () -> clearPreview(playerUuid), durationTicks);
+        activePreviews.put(playerUuid, new ActivePreview(spawned, cleanupTask));
+    }
+
+    private BlockDisplay spawnEdge(
+            Player viewer,
+            World world,
+            double x, double y, double z,
+            float sx, float sy, float sz,
+            Material material,
+            Color glowColor
+    ) {
+        Location loc = new Location(world, x, y, z);
+        BlockDisplay display = world.spawn(loc, BlockDisplay.class, d -> {
+            d.setPersistent(false);
+            d.setVisibleByDefault(false);
+            d.setBlock(material.createBlockData());
+            d.setBrightness(new Display.Brightness(15, 15));
+            d.setGlowing(true);
+            d.setGlowColorOverride(glowColor);
+            d.setTransformation(new Transformation(
+                    new Vector3f(0f, 0f, 0f),
+                    new AxisAngle4f(),
+                    new Vector3f(sx, sy, sz),
+                    new AxisAngle4f()
+            ));
+        });
+        viewer.showEntity(plugin, display);
+        return display;
+    }
+
+    public void clearPreview(UUID playerUuid) {
+        ActivePreview prev = activePreviews.remove(playerUuid);
+        if (prev != null) {
+            prev.dispose();
         }
     }
 
-    private void spawnDot(Player player, Particle particle, double x, double y, double z) {
-        Location pLoc = player.getLocation();
-        double dx = x - pLoc.getX();
-        double dy = y - pLoc.getY();
-        double dz = z - pLoc.getZ();
-        if (dx * dx + dy * dy + dz * dz <= 64.0 * 64.0) {
-            player.spawnParticle(particle, x, y, z, 1, 0, 0, 0, 0);
+    public void clearAllPreviews() {
+        for (ActivePreview preview : activePreviews.values()) {
+            preview.dispose();
         }
-    }
-
-    public static Component formatLocation(Location loc) {
-        return MINI.deserialize("<yellow>(" + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ()
-                + ") <gray>[" + loc.getWorld().getName() + "]");
+        activePreviews.clear();
     }
 
     private static String normalizeKey(String name) {
