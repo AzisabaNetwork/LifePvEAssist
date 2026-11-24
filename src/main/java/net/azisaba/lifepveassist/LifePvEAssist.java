@@ -3,6 +3,7 @@ package net.azisaba.lifepveassist;
 import com.github.retrooper.packetevents.PacketEvents;
 import net.azisaba.lifepveassist.command.LifePvEAssistCommand;
 import net.azisaba.lifepveassist.ffn.FFN;
+import net.azisaba.lifepveassist.temp.TempModule;
 import net.azisaba.lifepveassist.losingcats.LosingCats;
 import net.azisaba.lifepveassist.killerschocolate.KillerChocolateListener;
 import net.azisaba.lifepveassist.listener.CraftListener;
@@ -47,6 +48,7 @@ public final class LifePvEAssist extends JavaPlugin {
         pluginManager.registerEvents(new PlayerJoinListener(this), this);
 
         FFN.register(this);
+        TempModule.register(this);
 
         pluginManager.registerEvents(new KillerChocolateListener(), this);
         pluginManager.registerEvents(new LosingCats(this), this);
@@ -58,6 +60,7 @@ public final class LifePvEAssist extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        TempModule.shutdown();
         FFN.clear();
         this.getLogger().info("LifePvEAssist has been disabled.");
     }

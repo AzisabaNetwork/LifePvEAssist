@@ -12,8 +12,24 @@ commands:
     permission: lifepveassist.command.lifecraft
   blocking:
     description: Toggle repair/salvage blocking
+  lifetemp:
+    description: Temperature management command
+    aliases: [ltm, temp]
+    usage: /<command> <info|set|add|reset|armor|zone|reload>
+    permission: lifepveassist.temp.use
 
 permissions:
   lifepveassist.command.lifecraft:
     description: Allows using the /lifepveassist command
     default: op
+  lifepveassist.temp.use:
+    description: Allows checking own temperature info
+    default: true
+  lifepveassist.temp.admin:
+    description: Allows using all temperature admin commands
+    default: op
+    children:
+      lifepveassist.temp.use: true
+  lifepveassist.temp.bypass:
+    description: Bypasses temperature penalties, lethal effects, and zone changes
+    default: false
