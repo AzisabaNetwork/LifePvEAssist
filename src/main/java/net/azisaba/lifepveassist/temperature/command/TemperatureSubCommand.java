@@ -234,13 +234,21 @@ public class TemperatureSubCommand {
                     msg(sender, "<red>延長温度は 0 より大きい数値で指定してください。");
                     return;
                 }
-                armorInspector.applyResistance(hand, isHeat, bonus);
+                boolean ok = armorInspector.applyResistance(hand, isHeat, bonus);
+                if (!ok) {
+                    msg(sender, "<red>PDC の書き込みに失敗しました（値が既に同一か、編集不可のアイテムです）。");
+                    return;
+                }
                 msg(sender, "<green>手持ちアイテムに PDC コンポーネント "
                         + (isHeat ? "<red>耐熱 (lifepveassist:temp_heat)" : "<aqua>耐冷 (lifepveassist:temp_cold)")
                         + " <white>+" + BossBarController.formatTemp(bonus) + "℃ <green>を付与しました。");
             }
             case "clear" -> {
-                armorInspector.clearResistance(hand);
+                boolean ok = armorInspector.clearResistance(hand);
+                if (!ok) {
+                    msg(sender, "<red>温度耐性 PDC の削除に失敗しました（対象 PDC が付いていないか、編集不可のアイテムです）。");
+                    return;
+                }
                 msg(sender, "<green>手持ちアイテムの温度耐性 PDC コンポーネントを削除しました。");
             }
             case "inspect" -> {
@@ -276,7 +284,15 @@ public class TemperatureSubCommand {
                     msg(sender, "<gray>※先に WorldEdit (//wand, //pos1, //pos2 等) で範囲を選択してください。");
                     return;
                 }
-                String name = args[2];
+                String name = args[2].trim();
+                if (name.isEmpty() || name.length() > 64) {
+                    msg(sender, "<red>エリア名は 1〜64 文字以内で指定してください。");
+                    return;
+                }
+                if (zoneManager.getZone(name) != null) {
+                    msg(sender, "<red>同名の温度エリア <yellow>" + name + " <red>は既に存在します（大文字・小文字区別なし）。");
+                    return;
+                }
                 Double delta = parseDouble(args[3]);
                 Integer interval = parseInt(args[4]);
                 if (delta == null || Math.abs(delta) < 1e-9) {

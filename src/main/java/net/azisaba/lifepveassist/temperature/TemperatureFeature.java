@@ -16,9 +16,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
 /**
@@ -62,11 +64,15 @@ public final class TemperatureFeature {
             TemperatureRepository repository = new TemperatureRepository(dbConnector.getDataSource());
             repository.initTables();
 
-            this.dbExecutor = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "LifePvEAssist-TempDB");
+            AtomicInteger threadSeq = new AtomicInteger(1);
+            this.dbExecutor = Executors.newFixedThreadPool(4, r -> {
+                Thread t = new Thread(r, "LifePvEAssist-TempDB-" + threadSeq.getAndIncrement());
                 t.setDaemon(true);
                 return t;
             });
+
+            String rawOwner = initialConfig.serverName() + "-" + UUID.randomUUID().toString().substring(0, 8);
+            String lockOwner = rawOwner.length() > 64 ? rawOwner.substring(0, 64) : rawOwner;
 
             ArmorInspector armorInspector = new ArmorInspector(plugin);
             BossBarController bossBarController = new BossBarController();
@@ -75,7 +81,7 @@ public final class TemperatureFeature {
             this.zoneManager.loadSync(initialConfig.serverName());
 
             this.service = new TemperatureService(
-                    plugin, initialConfig, armorInspector, repository,
+                    plugin, initialConfig, lockOwner, armorInspector, repository,
                     zoneManager, bossBarController, warningController, dbExecutor
             );
             this.subCommand = new TemperatureSubCommand(
@@ -106,10 +112,17 @@ public final class TemperatureFeature {
     }
 
     public void reload() {
+        plugin.reloadConfig();
         if (!active) {
+            TemperatureConfig next = TemperatureConfig.fromSection(
+                    plugin.getConfig().getConfigurationSection("temperature"),
+                    plugin.getLogger()
+            );
+            if (next.isFeatureEnabled()) {
+                enable();
+            }
             return;
         }
-        plugin.reloadConfig();
         TemperatureConfig next = TemperatureConfig.fromSection(
                 plugin.getConfig().getConfigurationSection("temperature"),
                 plugin.getLogger()
@@ -144,9 +157,5 @@ public final class TemperatureFeature {
 
     public TemperatureSubCommand getSubCommand() {
         return subCommand;
-    }
-
-    public TemperatureService getService() {
-        return service;
     }
 }

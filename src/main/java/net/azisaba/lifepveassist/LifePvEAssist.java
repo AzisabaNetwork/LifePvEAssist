@@ -40,6 +40,7 @@ public final class LifePvEAssist extends JavaPlugin {
     public void onEnable() {
         this.saveDefaultConfig();
         this.migrateFFNConfig();
+        this.migrateTemperatureConfig();
 
         this.temperatureFeature = new TemperatureFeature(this);
 
@@ -116,6 +117,40 @@ public final class LifePvEAssist extends JavaPlugin {
         config.set("GatherList", null);
 
         this.saveConfig();
+    }
+
+    /**
+     * 既存サーバーの {@code config.yml} に {@code database:} / {@code temperature:} セクションや
+     * 新規キーが不足している場合、JAR 内デフォルト設定から不足分のみ追記して保存する。
+     * 既存の他設定（{@code pvp-enabled-worlds}, {@code ffn} 等）は上書きしない。
+     */
+    private void migrateTemperatureConfig() {
+        FileConfiguration config = this.getConfig();
+        org.bukkit.configuration.Configuration defaults = config.getDefaults();
+        if (defaults == null) {
+            return;
+        }
+        boolean modified = false;
+        for (String rootKey : new String[]{"database", "temperature"}) {
+            ConfigurationSection defaultSec = defaults.getConfigurationSection(rootKey);
+            if (defaultSec == null) {
+                continue;
+            }
+            for (String relKey : defaultSec.getKeys(true)) {
+                if (defaultSec.isConfigurationSection(relKey)) {
+                    continue;
+                }
+                String fullPath = rootKey + "." + relKey;
+                if (!config.isSet(fullPath)) {
+                    config.set(fullPath, defaultSec.get(relKey));
+                    modified = true;
+                }
+            }
+        }
+        if (modified) {
+            this.saveConfig();
+            this.getLogger().info("[Temperature] config.yml に不足していた database / temperature 設定を自動追記しました。");
+        }
     }
 
     public void setup() {

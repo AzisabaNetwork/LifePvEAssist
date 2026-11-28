@@ -9,20 +9,27 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * プレイヤー温度および温度変化ゾーンの DB アクセスを担うリポジトリ。
- * 排他方式は {@code locked} フラグ＋絶対値保存に統一しています。
+ * 排他方式は所有者トークン ({@code lock_owner})＋ハートビート ({@code locked_at}) を用いた
+ * CAS ロック＋絶対値保存に統一しています。
  */
 public class TemperatureRepository {
 
     public static final String PLAYERS_TABLE = "lifepveassist_temperature_players";
     public static final String ZONES_TABLE = "lifepveassist_temperature_zones";
 
-    public record LoadedPlayerRow(double temperature, long previousUpdatedAtMillis, boolean existed) {
+    public record LoadedPlayerRow(
+            double temperature,
+            long previousUpdatedAtMillis,
+            boolean existed,
+            boolean lockAcquired
+    ) {
     }
 
     private final DataSource dataSource;
@@ -36,9 +43,14 @@ public class TemperatureRepository {
                 + "`uuid` VARCHAR(36) NOT NULL,"
                 + "`temperature` DOUBLE NOT NULL,"
                 + "`locked` BOOLEAN NOT NULL DEFAULT FALSE,"
+                + "`lock_owner` VARCHAR(64) NULL,"
+                + "`locked_at` BIGINT NOT NULL DEFAULT 0,"
                 + "`updated_at` BIGINT NOT NULL,"
                 + "PRIMARY KEY (`uuid`)"
                 + ")";
+
+        String alterAddOwner = "ALTER TABLE `" + PLAYERS_TABLE + "` ADD COLUMN IF NOT EXISTS `lock_owner` VARCHAR(64) NULL";
+        String alterAddLockedAt = "ALTER TABLE `" + PLAYERS_TABLE + "` ADD COLUMN IF NOT EXISTS `locked_at` BIGINT NOT NULL DEFAULT 0";
 
         String createZones = "CREATE TABLE IF NOT EXISTS `" + ZONES_TABLE + "` ("
                 + "`server_name` VARCHAR(64) NOT NULL,"
@@ -58,74 +70,107 @@ public class TemperatureRepository {
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(createPlayers);
+            stmt.executeUpdate(alterAddOwner);
+            stmt.executeUpdate(alterAddLockedAt);
             stmt.executeUpdate(createZones);
         }
     }
 
     /**
-     * 移動元サーバーのロック解除 (locked=false) またはタイムアウトを待ってから最新温度を読み込み、
-     * 本サーバー用に locked=true を取得します。
+     * 移動元サーバーのロック解除 ({@code locked=false}) またはクラッシュ後のタイムアウトを待ってから
+     * CAS で自分の {@code owner} によるロックを取得し、最新温度を読み込みます。
+     * 他サーバーが生存してロックを保持し続けている場合は奪わず {@code lockAcquired=false} を返します。
      */
     public LoadedPlayerRow loadAndAcquireLock(
             UUID uuid,
+            String owner,
             double defaultTemp,
             long maxWaitMillis,
             long lockTimeoutMillis
     ) throws SQLException {
-        long deadline = System.currentTimeMillis() + Math.max(0L, maxWaitMillis);
+        long now = System.currentTimeMillis();
+        if (tryInsertNewPlayer(uuid, defaultTemp, owner, now)) {
+            return new LoadedPlayerRow(defaultTemp, now, false, true);
+        }
 
+        long deadline = now + Math.max(0L, maxWaitMillis);
         while (true) {
-            long now = System.currentTimeMillis();
-            RowSnapshot snapshot = selectPlayer(uuid);
-
-            if (snapshot == null) {
-                upsertPlayer(uuid, defaultTemp, true, now);
-                return new LoadedPlayerRow(defaultTemp, now, false);
+            now = System.currentTimeMillis();
+            if (tryAcquireLockCas(uuid, owner, lockTimeoutMillis, now)) {
+                RowSnapshot snapshot = selectPlayer(uuid);
+                if (snapshot == null) {
+                    if (tryInsertNewPlayer(uuid, defaultTemp, owner, now)) {
+                        return new LoadedPlayerRow(defaultTemp, now, false, true);
+                    }
+                    continue;
+                }
+                double safeTemp = Double.isFinite(snapshot.temperature) ? snapshot.temperature : defaultTemp;
+                return new LoadedPlayerRow(safeTemp, snapshot.updatedAt, true, true);
             }
 
-            boolean lockExpired = (now - snapshot.updatedAt) >= lockTimeoutMillis;
-            if (!snapshot.locked || lockExpired || now >= deadline) {
+            if (now >= deadline) {
+                RowSnapshot snapshot = selectPlayer(uuid);
+                if (snapshot == null) {
+                    if (tryInsertNewPlayer(uuid, defaultTemp, owner, now)) {
+                        return new LoadedPlayerRow(defaultTemp, now, false, true);
+                    }
+                    return new LoadedPlayerRow(defaultTemp, now, false, false);
+                }
                 double safeTemp = Double.isFinite(snapshot.temperature) ? snapshot.temperature : defaultTemp;
-                upsertPlayer(uuid, safeTemp, true, now);
-                return new LoadedPlayerRow(safeTemp, snapshot.updatedAt, true);
+                return new LoadedPlayerRow(safeTemp, snapshot.updatedAt, true, false);
             }
 
             try {
                 Thread.sleep(Math.min(100L, Math.max(10L, deadline - now)));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                double safeTemp = Double.isFinite(snapshot.temperature) ? snapshot.temperature : defaultTemp;
-                upsertPlayer(uuid, safeTemp, true, System.currentTimeMillis());
-                return new LoadedPlayerRow(safeTemp, snapshot.updatedAt, true);
+                RowSnapshot snapshot = selectPlayer(uuid);
+                double safeTemp = (snapshot != null && Double.isFinite(snapshot.temperature))
+                        ? snapshot.temperature : defaultTemp;
+                long prevUpdated = snapshot != null ? snapshot.updatedAt : System.currentTimeMillis();
+                return new LoadedPlayerRow(safeTemp, prevUpdated, snapshot != null, false);
             }
         }
     }
 
     /**
-     * Quit 時に最終温度（絶対値）を保存し、ロックを解放 (locked=false) します。
+     * Quit 時に最終温度（絶対値）を保存し、自分が所有しているロックを解放 ({@code locked=false}) します。
+     * 他サーバーが既に正当なロックを所有している場合は上書きしません。
      */
-    public void savePlayerAndReleaseLock(UUID uuid, double temperature) throws SQLException {
+    public boolean savePlayerAndReleaseLock(UUID uuid, String owner, double temperature) throws SQLException {
         if (!Double.isFinite(temperature)) {
-            return;
+            return false;
         }
-        upsertPlayer(uuid, temperature, false, System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        String sql = "UPDATE `" + PLAYERS_TABLE + "` SET "
+                + "`temperature` = ?, `locked` = FALSE, `lock_owner` = NULL, `locked_at` = 0, `updated_at` = ? "
+                + "WHERE `uuid` = ? AND (`lock_owner` = ? OR `locked` = FALSE)";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setDouble(1, temperature);
+            ps.setLong(2, now);
+            ps.setString(3, uuid.toString());
+            ps.setString(4, owner);
+            return ps.executeUpdate() > 0;
+        }
     }
 
     /**
-     * 複数プレイヤーの温度を絶対値で一括保存します。
-     * 定期保存では {@code keepLocked=true}、サーバー停止時は {@code keepLocked=false} を指定します。
+     * 自分がロック所有者のプレイヤーのみ温度を絶対値で一括保存します。
+     * 定期保存では {@code keepLocked=true}（ハートビート更新を兼ねる）、サーバー停止時は {@code keepLocked=false} を指定します。
      */
-    public void savePlayersBatch(Map<UUID, Double> snapshot, boolean keepLocked) throws SQLException {
+    public void savePlayersBatch(String owner, Map<UUID, Double> snapshot, boolean keepLocked) throws SQLException {
         if (snapshot.isEmpty()) {
             return;
         }
         long now = System.currentTimeMillis();
-        String sql = "INSERT INTO `" + PLAYERS_TABLE + "` (`uuid`, `temperature`, `locked`, `updated_at`) "
-                + "VALUES (?, ?, ?, ?) "
-                + "ON DUPLICATE KEY UPDATE "
-                + "`temperature` = VALUES(`temperature`), "
-                + "`locked` = VALUES(`locked`), "
-                + "`updated_at` = VALUES(`updated_at`)";
+        String sql = keepLocked
+                ? "UPDATE `" + PLAYERS_TABLE + "` SET "
+                + "`temperature` = ?, `locked` = TRUE, `locked_at` = ?, `updated_at` = ? "
+                + "WHERE `uuid` = ? AND `lock_owner` = ?"
+                : "UPDATE `" + PLAYERS_TABLE + "` SET "
+                + "`temperature` = ?, `locked` = FALSE, `lock_owner` = NULL, `locked_at` = 0, `updated_at` = ? "
+                + "WHERE `uuid` = ? AND (`lock_owner` = ? OR `locked` = FALSE)";
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -137,10 +182,50 @@ public class TemperatureRepository {
                     if (temp == null || !Double.isFinite(temp)) {
                         continue;
                     }
-                    ps.setString(1, entry.getKey().toString());
-                    ps.setDouble(2, temp);
-                    ps.setBoolean(3, keepLocked);
-                    ps.setLong(4, now);
+                    if (keepLocked) {
+                        ps.setDouble(1, temp);
+                        ps.setLong(2, now);
+                        ps.setLong(3, now);
+                        ps.setString(4, entry.getKey().toString());
+                        ps.setString(5, owner);
+                    } else {
+                        ps.setDouble(1, temp);
+                        ps.setLong(2, now);
+                        ps.setString(3, entry.getKey().toString());
+                        ps.setString(4, owner);
+                    }
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(prevAutoCommit);
+            }
+        }
+    }
+
+    /**
+     * オンライン中の全プレイヤー（dirty でないプレイヤーを含む）のロック有効期限 ({@code locked_at}) を更新します。
+     */
+    public void renewLocksBatch(String owner, Collection<UUID> uuids) throws SQLException {
+        if (uuids.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        String sql = "UPDATE `" + PLAYERS_TABLE + "` SET `locked_at` = ? "
+                + "WHERE `uuid` = ? AND `locked` = TRUE AND `lock_owner` = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            boolean prevAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                for (UUID uuid : uuids) {
+                    ps.setLong(1, now);
+                    ps.setString(2, uuid.toString());
+                    ps.setString(3, owner);
                     ps.addBatch();
                 }
                 ps.executeBatch();
@@ -222,11 +307,43 @@ public class TemperatureRepository {
         }
     }
 
-    private record RowSnapshot(double temperature, boolean locked, long updatedAt) {
+    private record RowSnapshot(double temperature, boolean locked, String lockOwner, long lockedAt, long updatedAt) {
+    }
+
+    private boolean tryInsertNewPlayer(UUID uuid, double temperature, String owner, long now) throws SQLException {
+        String sql = "INSERT IGNORE INTO `" + PLAYERS_TABLE + "` "
+                + "(`uuid`, `temperature`, `locked`, `lock_owner`, `locked_at`, `updated_at`) "
+                + "VALUES (?, ?, TRUE, ?, ?, ?)";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            ps.setDouble(2, temperature);
+            ps.setString(3, owner);
+            ps.setLong(4, now);
+            ps.setLong(5, now);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    private boolean tryAcquireLockCas(UUID uuid, String owner, long lockTimeoutMillis, long now) throws SQLException {
+        long expiryCutoff = now - Math.max(0L, lockTimeoutMillis);
+        String sql = "UPDATE `" + PLAYERS_TABLE + "` SET "
+                + "`locked` = TRUE, `lock_owner` = ?, `locked_at` = ? "
+                + "WHERE `uuid` = ? AND (`locked` = FALSE OR `lock_owner` = ? OR `locked_at` <= ?)";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, owner);
+            ps.setLong(2, now);
+            ps.setString(3, uuid.toString());
+            ps.setString(4, owner);
+            ps.setLong(5, expiryCutoff);
+            return ps.executeUpdate() > 0;
+        }
     }
 
     private RowSnapshot selectPlayer(UUID uuid) throws SQLException {
-        String sql = "SELECT `temperature`, `locked`, `updated_at` FROM `" + PLAYERS_TABLE + "` WHERE `uuid` = ?";
+        String sql = "SELECT `temperature`, `locked`, `lock_owner`, `locked_at`, `updated_at` "
+                + "FROM `" + PLAYERS_TABLE + "` WHERE `uuid` = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, uuid.toString());
@@ -235,28 +352,13 @@ public class TemperatureRepository {
                     return new RowSnapshot(
                             rs.getDouble("temperature"),
                             rs.getBoolean("locked"),
+                            rs.getString("lock_owner"),
+                            rs.getLong("locked_at"),
                             rs.getLong("updated_at")
                     );
                 }
             }
         }
         return null;
-    }
-
-    private void upsertPlayer(UUID uuid, double temperature, boolean locked, long updatedAt) throws SQLException {
-        String sql = "INSERT INTO `" + PLAYERS_TABLE + "` (`uuid`, `temperature`, `locked`, `updated_at`) "
-                + "VALUES (?, ?, ?, ?) "
-                + "ON DUPLICATE KEY UPDATE "
-                + "`temperature` = VALUES(`temperature`), "
-                + "`locked` = VALUES(`locked`), "
-                + "`updated_at` = VALUES(`updated_at`)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, uuid.toString());
-            ps.setDouble(2, temperature);
-            ps.setBoolean(3, locked);
-            ps.setLong(4, updatedAt);
-            ps.executeUpdate();
-        }
     }
 }

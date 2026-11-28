@@ -18,10 +18,6 @@ public class LifePvEAssistCommand implements CommandExecutor, TabCompleter {
 
     private final TemperatureFeature temperatureFeature;
 
-    public LifePvEAssistCommand() {
-        this(null);
-    }
-
     public LifePvEAssistCommand(TemperatureFeature temperatureFeature) {
         this.temperatureFeature = temperatureFeature;
     }

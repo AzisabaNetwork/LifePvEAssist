@@ -27,6 +27,7 @@ public record TemperatureConfig(
         long lockTimeoutMillis,
         int stage1ImmunityPieces,
         int stage2DamageImmunityPieces,
+        double armorMaxBonus,
         double stage1Offset,
         boolean slownessEnabled,
         int slownessAmplifier,
@@ -112,12 +113,19 @@ public record TemperatureConfig(
             recoveryRate = 20.0;
         }
 
-        int saveInterval = Math.max(10, cfg.getInt("storage.save-interval-seconds", 300));
+        int saveInterval = Math.max(10, cfg.getInt("storage.save-interval-seconds", 60));
         long joinMaxWait = Math.max(0L, cfg.getLong("storage.join-load-max-wait-millis", 2000L));
-        long lockTimeoutSec = Math.max(3L, cfg.getLong("storage.lock-timeout-seconds", 10L));
+        long lockTimeoutSec = Math.max(3L, cfg.getLong("storage.lock-timeout-seconds", 180L));
+        long minLockTimeoutSec = (long) saveInterval * 3L;
+        if (lockTimeoutSec < minLockTimeoutSec) {
+            warn(logger, "storage.lock-timeout-seconds (" + lockTimeoutSec + "s) が save-interval-seconds * 3 ("
+                    + minLockTimeoutSec + "s) より小さいため、" + minLockTimeoutSec + "s に引き上げます。");
+            lockTimeoutSec = minLockTimeoutSec;
+        }
 
         int stage1Immunity = Math.max(1, cfg.getInt("armor.stage1-immunity-pieces", 2));
         int stage2Immunity = Math.max(1, cfg.getInt("armor.stage2-damage-immunity-pieces", 4));
+        double armorMaxBonus = positiveOrDefault(cfg.getDouble("armor.max-bonus", 300.0), 300.0, logger, "armor.max-bonus");
 
         double stage1Offset = positiveOrDefault(cfg.getDouble("penalties.stage1.offset-from-lethal", 40.0), 40.0, logger, "penalties.stage1.offset-from-lethal");
         boolean slownessEnabled = cfg.getBoolean("penalties.stage1.slowness.enabled", true);
@@ -127,6 +135,11 @@ public record TemperatureConfig(
         int effectDuration = Math.max(20, cfg.getInt("penalties.stage1.effect-duration-ticks", 60));
 
         double stage2Offset = positiveOrDefault(cfg.getDouble("penalties.stage2.offset-from-lethal", 20.0), 20.0, logger, "penalties.stage2.offset-from-lethal");
+        if (stage2Offset > stage1Offset) {
+            warn(logger, "penalties.stage2.offset-from-lethal (" + stage2Offset + ") は stage1 ("
+                    + stage1Offset + ") 以下にしてください。既定値 (20.0) または stage1 以下に補正します。");
+            stage2Offset = Math.min(20.0, stage1Offset);
+        }
         boolean damageEnabled = cfg.getBoolean("penalties.stage2.damage.enabled", true);
         double damageAmount = positiveOrDefault(cfg.getDouble("penalties.stage2.damage.amount", 2.0), 2.0, logger, "penalties.stage2.damage.amount");
         int damageInterval = Math.max(1, cfg.getInt("penalties.stage2.damage.interval-seconds", 1));
@@ -144,6 +157,10 @@ public record TemperatureConfig(
 
         boolean warningEnabled = cfg.getBoolean("warning.enabled", true);
         double warningOffset = positiveOrDefault(cfg.getDouble("warning.offset-from-lethal", 20.0), 20.0, logger, "warning.offset-from-lethal");
+        if (warningOffset > stage2Offset) {
+            warn(logger, "warning.offset-from-lethal (" + warningOffset + ") は stage2 (" + stage2Offset + ") 以下にクランプします。");
+            warningOffset = stage2Offset;
+        }
         int warningInterval = Math.max(1, cfg.getInt("warning.interval-seconds", 5));
         int warnFadeIn = Math.max(0, cfg.getInt("warning.fade-in-ticks", 5));
         int warnStay = Math.max(1, cfg.getInt("warning.stay-ticks", 30));
@@ -190,6 +207,7 @@ public record TemperatureConfig(
                 lockTimeoutSec * 1000L,
                 stage1Immunity,
                 stage2Immunity,
+                armorMaxBonus,
                 stage1Offset,
                 slownessEnabled,
                 slownessAmp,
@@ -238,8 +256,8 @@ public record TemperatureConfig(
     public static TemperatureConfig defaults() {
         return new TemperatureConfig(
                 "default", Set.of(), 20.0, 100.0, -80.0,
-                10, 20.0, 300, 2000L, 10_000L,
-                2, 4,
+                10, 20.0, 60, 2000L, 180_000L,
+                2, 4, 300.0,
                 40.0, true, 1, true, 0, 60,
                 20.0, true, 2.0, 1, true, true, true, 140,
                 "<red><bold><player> は灼熱の高温に耐えられず力尽きた... (<temp>℃)",

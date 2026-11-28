@@ -19,9 +19,7 @@ public final class DBConnector {
 
         HikariConfig hikari = new HikariConfig();
         hikari.setPoolName("LifePvEAssist-DB");
-        if (dbConfig.scheme() != null && dbConfig.scheme().startsWith("jdbc:mariadb")) {
-            hikari.setDriverClassName(org.mariadb.jdbc.Driver.class.getName());
-        }
+        hikari.setDriverClassName(org.mariadb.jdbc.Driver.class.getName());
         hikari.setJdbcUrl(dbConfig.toJdbcUrl());
         hikari.setUsername(dbConfig.username());
         hikari.setPassword(dbConfig.password());

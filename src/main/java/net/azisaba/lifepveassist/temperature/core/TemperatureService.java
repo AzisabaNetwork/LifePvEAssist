@@ -41,6 +41,7 @@ public class TemperatureService {
     private static final MiniMessage MINI = MiniMessage.miniMessage();
 
     private final Plugin plugin;
+    private final String lockOwner;
     private final ArmorInspector armorInspector;
     private final TemperatureRepository repository;
     private final ZoneManager zoneManager;
@@ -57,6 +58,7 @@ public class TemperatureService {
     public TemperatureService(
             Plugin plugin,
             TemperatureConfig initialConfig,
+            String lockOwner,
             ArmorInspector armorInspector,
             TemperatureRepository repository,
             ZoneManager zoneManager,
@@ -66,6 +68,7 @@ public class TemperatureService {
     ) {
         this.plugin = plugin;
         this.config = initialConfig;
+        this.lockOwner = lockOwner;
         this.armorInspector = armorInspector;
         this.repository = repository;
         this.zoneManager = zoneManager;
@@ -132,7 +135,7 @@ public class TemperatureService {
 
         if (!snapshot.isEmpty()) {
             try {
-                repository.savePlayersBatch(snapshot, false);
+                repository.savePlayersBatch(lockOwner, snapshot, false);
             } catch (SQLException e) {
                 plugin.getLogger().log(Level.SEVERE, "[Temperature] サーバー停止時の温度一括保存に失敗しました。", e);
             }
@@ -155,6 +158,7 @@ public class TemperatureService {
             try {
                 TemperatureRepository.LoadedPlayerRow row = repository.loadAndAcquireLock(
                         uuid,
+                        lockOwner,
                         cfg.defaultTemp(),
                         cfg.joinLoadMaxWaitMillis(),
                         cfg.lockTimeoutMillis()
@@ -177,7 +181,7 @@ public class TemperatureService {
                         // 読み込み中に切断された場合はロックを即解放
                         dbExecutor.execute(() -> {
                             try {
-                                repository.savePlayerAndReleaseLock(uuid, effectiveTemp);
+                                repository.savePlayerAndReleaseLock(uuid, lockOwner, effectiveTemp);
                             } catch (SQLException ignored) {
                             }
                         });
@@ -226,7 +230,7 @@ public class TemperatureService {
                 double finalTemp = state.getTemperature();
                 dbExecutor.execute(() -> {
                     try {
-                        repository.savePlayerAndReleaseLock(uuid, finalTemp);
+                        repository.savePlayerAndReleaseLock(uuid, lockOwner, finalTemp);
                     } catch (SQLException e) {
                         plugin.getLogger().log(Level.WARNING, "[Temperature] Quit 時の温度保存に失敗しました: " + uuid, e);
                     }
@@ -538,7 +542,7 @@ public class TemperatureService {
         }
 
         // Step 4: 防具耐性の再集計
-        ArmorResistance resistance = armorInspector.inspectPlayer(player);
+        ArmorResistance resistance = armorInspector.inspectPlayer(player).capped(cfg.armorMaxBonus());
         TemperatureEvaluation eval = evaluateWithConfig(state.getTemperature(), cfg, resistance);
 
         // BossBar 更新
@@ -665,19 +669,27 @@ public class TemperatureService {
             TemperatureEvaluation eval
     ) {
         if (eval.applyHeatVisual() && cfg.heatFireOverlay()) {
+            org.bukkit.WorldBorder realBorder = player.getWorld().getWorldBorder();
             if (!state.isVisualFireApplied()) {
-                org.bukkit.WorldBorder realBorder = player.getWorld().getWorldBorder();
+                state.setPreviousWorldBorder(player.getWorldBorder());
                 org.bukkit.WorldBorder redBorder = Bukkit.createWorldBorder();
                 redBorder.setCenter(realBorder.getCenter());
                 redBorder.setSize(realBorder.getSize());
-                redBorder.setDamageAmount(realBorder.getDamageAmount());
-                redBorder.setDamageBuffer(realBorder.getDamageBuffer());
+                redBorder.setDamageAmount(0.0);
+                redBorder.setDamageBuffer(0.0);
                 redBorder.setWarningDistance(Integer.MAX_VALUE);
                 player.setWorldBorder(redBorder);
                 state.setVisualFireApplied(true);
+            } else {
+                org.bukkit.WorldBorder active = player.getWorldBorder();
+                if (active != null) {
+                    active.setCenter(realBorder.getCenter());
+                    active.setSize(realBorder.getSize());
+                }
             }
         } else if (state.isVisualFireApplied()) {
-            player.setWorldBorder(null);
+            player.setWorldBorder(state.getPreviousWorldBorder());
+            state.setPreviousWorldBorder(null);
             state.setVisualFireApplied(false);
         }
 
@@ -694,7 +706,8 @@ public class TemperatureService {
 
     private void clearVisualEffects(Player player, PlayerTemperatureState state) {
         if (state.isVisualFireApplied()) {
-            player.setWorldBorder(null);
+            player.setWorldBorder(state.getPreviousWorldBorder());
+            state.setPreviousWorldBorder(null);
             state.setVisualFireApplied(false);
         }
         if (state.isFreezeOverlayApplied()) {
@@ -725,26 +738,42 @@ public class TemperatureService {
      */
     private void flushDirtyPlayersAsync() {
         Map<UUID, Double> dirtySnapshot = new HashMap<>();
+        java.util.List<UUID> loadedUuids = new java.util.ArrayList<>();
         for (Map.Entry<UUID, PlayerTemperatureState> entry : states.entrySet()) {
             PlayerTemperatureState state = entry.getValue();
-            if (state.isLoaded() && state.isDirty()) {
-                dirtySnapshot.put(entry.getKey(), state.getTemperature());
-                state.setDirty(false);
+            if (state.isLoaded()) {
+                loadedUuids.add(entry.getKey());
+                if (state.isDirty()) {
+                    dirtySnapshot.put(entry.getKey(), state.getTemperature());
+                    state.setDirty(false);
+                }
             }
         }
-        if (dirtySnapshot.isEmpty()) {
+        if (dirtySnapshot.isEmpty() && loadedUuids.isEmpty()) {
             return;
         }
         dbExecutor.execute(() -> {
-            try {
-                repository.savePlayersBatch(dirtySnapshot, true);
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.WARNING, "[Temperature] 定期オートセーブに失敗しました。次回リトライします。", e);
-                for (UUID uuid : dirtySnapshot.keySet()) {
-                    PlayerTemperatureState s = states.get(uuid);
-                    if (s != null) {
-                        s.setDirty(true);
+            if (!dirtySnapshot.isEmpty()) {
+                try {
+                    repository.savePlayersBatch(lockOwner, dirtySnapshot, true);
+                } catch (SQLException e) {
+                    plugin.getLogger().log(Level.WARNING, "[Temperature] 定期オートセーブに失敗しました。次回リトライします。", e);
+                    for (UUID uuid : dirtySnapshot.keySet()) {
+                        PlayerTemperatureState s = states.get(uuid);
+                        if (s != null) {
+                            s.setDirty(true);
+                        }
                     }
+                }
+            }
+            java.util.List<UUID> renewOnly = loadedUuids.stream()
+                    .filter(u -> !dirtySnapshot.containsKey(u))
+                    .toList();
+            if (!renewOnly.isEmpty()) {
+                try {
+                    repository.renewLocksBatch(lockOwner, renewOnly);
+                } catch (SQLException e) {
+                    plugin.getLogger().log(Level.WARNING, "[Temperature] ロックハートビート更新に失敗しました。", e);
                 }
             }
         });

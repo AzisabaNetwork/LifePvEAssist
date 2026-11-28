@@ -92,6 +92,7 @@ tasks {
     shadowJar {
         archiveClassifier.set("")
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
+        mergeServiceFiles()
         relocate("kotlin", "net.azisaba.lifepveassist.lib.kotlin")
         relocate("org.jetbrains", "net.azisaba.lifepveassist.lib.org.jetbrains")
         relocate("com.zaxxer.hikari", "net.azisaba.lifepveassist.lib.hikari")

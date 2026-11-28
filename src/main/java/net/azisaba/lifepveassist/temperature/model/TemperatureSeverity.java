@@ -12,8 +12,4 @@ public enum TemperatureSeverity {
     public boolean isHot() {
         return this == HOT_STAGE1 || this == HOT_STAGE2 || this == HOT_LETHAL;
     }
-
-    public boolean isCold() {
-        return this == COLD_STAGE1 || this == COLD_STAGE2 || this == COLD_LETHAL;
-    }
 }

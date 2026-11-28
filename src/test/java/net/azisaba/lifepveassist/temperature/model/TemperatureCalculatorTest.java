@@ -71,4 +71,31 @@ class TemperatureCalculatorTest {
         assertFalse(z1.intersects(zDisjoint));
         assertFalse(z1.intersects(zOtherServer));
     }
+
+    @Test
+    void testStepRecoveryRateZeroDoesNotSnapToDefault() {
+        assertEquals(90.0, TemperatureCalculator.stepRecovery(90.0, 20.0, 0.0));
+        assertEquals(-60.0, TemperatureCalculator.stepRecovery(-60.0, 20.0, 0.0));
+        assertEquals(90.0, TemperatureCalculator.stepRecovery(90.0, 20.0, -5.0));
+        assertEquals(70.0, TemperatureCalculator.stepRecovery(90.0, 20.0, 20.0));
+        assertEquals(20.0, TemperatureCalculator.stepRecovery(25.0, 20.0, 20.0));
+    }
+
+    @Test
+    void testArmorBonusCappedAndSafeTempBound() {
+        ArmorResistance huge = new ArmorResistance(4, 5000.0, 4, 5000.0);
+        ArmorResistance capped = huge.capped(300.0);
+        assertEquals(300.0, capped.heatLimitBonus());
+        assertEquals(300.0, capped.coldLimitBonus());
+
+        // 未キャップの極端な値でも MAX_SAFE_TEMP / MIN_SAFE_TEMP を超えない
+        TemperatureEvaluation evalHuge = eval(1000.0, huge);
+        assertEquals(TemperatureCalculator.MAX_SAFE_TEMP, evalHuge.maxLimit());
+        assertEquals(TemperatureCalculator.MIN_SAFE_TEMP, evalHuge.minLimit());
+        assertTrue(evalHuge.triggerLethal());
+
+        // BossBar 縮退ケース
+        assertEquals(0.5f, TemperatureCalculator.computeBossBarProgress(20.0, 50.0, 50.0));
+        assertEquals(0.5f, TemperatureCalculator.computeBossBarProgress(20.0, 100.0, -100.0));
+    }
 }

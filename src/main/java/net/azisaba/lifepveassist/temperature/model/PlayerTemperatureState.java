@@ -1,5 +1,7 @@
 package net.azisaba.lifepveassist.temperature.model;
 
+import org.bukkit.WorldBorder;
+
 import java.util.UUID;
 
 /**
@@ -31,6 +33,7 @@ public class PlayerTemperatureState {
     private int zoneStaySeconds;
 
     private boolean visualFireApplied;
+    private WorldBorder previousWorldBorder;
     private boolean freezeOverlayApplied;
 
     public PlayerTemperatureState(UUID uuid, double initialTemperature, long nowMillis) {
@@ -80,7 +83,6 @@ public class PlayerTemperatureState {
     public void setLastDamageMillis(long lastDamageMillis) { this.lastDamageMillis = lastDamageMillis; }
 
     public String getCurrentZoneKey() { return currentZoneKey; }
-    public int getZoneStaySeconds() { return zoneStaySeconds; }
 
     public int tickZoneStay(String zoneKey) {
         if (zoneKey == null) {
@@ -104,6 +106,9 @@ public class PlayerTemperatureState {
 
     public boolean isVisualFireApplied() { return visualFireApplied; }
     public void setVisualFireApplied(boolean visualFireApplied) { this.visualFireApplied = visualFireApplied; }
+
+    public WorldBorder getPreviousWorldBorder() { return previousWorldBorder; }
+    public void setPreviousWorldBorder(WorldBorder previousWorldBorder) { this.previousWorldBorder = previousWorldBorder; }
 
     public boolean isFreezeOverlayApplied() { return freezeOverlayApplied; }
     public void setFreezeOverlayApplied(boolean freezeOverlayApplied) { this.freezeOverlayApplied = freezeOverlayApplied; }

@@ -33,8 +33,8 @@ public final class TemperatureCalculator {
             int stage1ImmunityPieces,
             int stage2DamageImmunityPieces
     ) {
-        double maxLimit = resistance.effectiveMaxLimit(baseMaxLimit);
-        double minLimit = resistance.effectiveMinLimit(baseMinLimit);
+        double maxLimit = Math.min(MAX_SAFE_TEMP, resistance.effectiveMaxLimit(baseMaxLimit));
+        double minLimit = Math.max(MIN_SAFE_TEMP, resistance.effectiveMinLimit(baseMinLimit));
 
         double hotStage1Threshold = maxLimit - stage1Offset;
         double hotStage2Threshold = maxLimit - stage2Offset;
@@ -107,7 +107,10 @@ public final class TemperatureCalculator {
      * 1秒分の自然回復を適用します（デフォルト温度を超えて逆方向へ進まない）。
      */
     public static double stepRecovery(double currentTemp, double defaultTemp, double ratePerSecond) {
-        if (ratePerSecond <= 0.0 || Math.abs(currentTemp - defaultTemp) < 1e-9) {
+        if (ratePerSecond <= 0.0) {
+            return currentTemp;
+        }
+        if (Math.abs(currentTemp - defaultTemp) < 1e-9) {
             return defaultTemp;
         }
         if (currentTemp > defaultTemp) {

@@ -12,6 +12,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BossBarController {
 
     private static final MiniMessage MINI = MiniMessage.miniMessage();
-    private static final DecimalFormat TEMP_FORMAT = new DecimalFormat("0.#");
+    private static final DecimalFormat TEMP_FORMAT = new DecimalFormat("0.#", DecimalFormatSymbols.getInstance(Locale.ROOT));
 
     private final Map<UUID, BossBar> activeBars = new ConcurrentHashMap<>();
 

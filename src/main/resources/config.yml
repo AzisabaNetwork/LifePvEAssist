@@ -17,7 +17,8 @@ ffn:
 
 # 共通データベース設定 (LifeCore 準拠 / temperature.enabled-worlds が空の場合は接続を行いません)
 database:
-  # change to jdbc:mysql if you want to use MySQL instead of MariaDB
+  # MariaDB Connector/J を使用するため、MySQL サーバーへも jdbc:mariadb で接続します
+  # (jdbc:mysql は使用しないでください)
   scheme: jdbc:mariadb
   hostname: localhost
   port: 3306
@@ -58,18 +59,21 @@ temperature:
 
   # 永続化・同期設定
   storage:
-    # dirty なプレイヤーの定期オートセーブ間隔 (秒)
-    save-interval-seconds: 300
+    # dirty なプレイヤーの定期オートセーブ＋ロック更新間隔 (秒)
+    save-interval-seconds: 60
     # Join 後に移動元サーバーのロック解除を待つ最大時間 (ミリ秒)
     join-load-max-wait-millis: 2000
     # 移動元サーバーのクラッシュ等で locked が残った場合にタイムアウトとみなす秒数
-    lock-timeout-seconds: 10
+    # (必ず save-interval-seconds * 3 以上にしてください)
+    lock-timeout-seconds: 180
 
   # 専用防具（Paper 標準 PDC コンポーネント: lifepveassist:temp_heat / lifepveassist:temp_cold）
   armor:
     # デメリット緩和に必要な装備部位数（1アイテム＝常に1部位固定）
     stage1-immunity-pieces: 2
     stage2-damage-immunity-pieces: 4
+    # 防具による耐熱・耐冷延長ボーナスの合計上限 (℃)
+    max-bonus: 300.0
 
   # デメリット設定（各プレイヤーの現在の即死ラインからの逆算）
   penalties:
@@ -91,7 +95,8 @@ temperature:
         enabled: true
         amount: 2.0
         interval-seconds: 1
-        # true = 防具貫通・ノックバックなし (衝撃吸収を優先消費してHP直接減算 / デフォルト)
+        # true = 防具貫通・ノックバックなし (衝撃吸収を優先消費して setHealth で直接減算 / デフォルト)
+        #        ※ EntityDamageEvent を発火しないため WorldGuard invincible や他プラグインのダメージリスナーを迂回します
         # false = 通常ダメージイベント経由 (player.damage)
         bypass-armor: true
       visual-effects:
