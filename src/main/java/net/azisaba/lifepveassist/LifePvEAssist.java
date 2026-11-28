@@ -1,9 +1,10 @@
 package net.azisaba.lifepveassist;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.event.PacketListenerCommon;
 import net.azisaba.lifepveassist.command.LifePvEAssistCommand;
 import net.azisaba.lifepveassist.ffn.FFN;
-import net.azisaba.lifepveassist.temp.TempModule;
+import net.azisaba.lifepveassist.temperature.TemperatureFeature;
 import net.azisaba.lifepveassist.losingcats.LosingCats;
 import net.azisaba.lifepveassist.killerschocolate.KillerChocolateListener;
 import net.azisaba.lifepveassist.listener.CraftListener;
@@ -24,6 +25,8 @@ public final class LifePvEAssist extends JavaPlugin {
 
     private static LifePvEAssist instance;
     public static SpigotPlugin pveLevel;
+    private TemperatureFeature temperatureFeature;
+    private PacketListenerCommon packetListener;
 
     public LifePvEAssist() {
         instance = this;
@@ -38,7 +41,14 @@ public final class LifePvEAssist extends JavaPlugin {
         this.saveDefaultConfig();
         this.migrateFFNConfig();
 
-        this.getCommand("lifepveassist").setExecutor(new LifePvEAssistCommand());
+        this.temperatureFeature = new TemperatureFeature(this);
+
+        LifePvEAssistCommand mainCommand = new LifePvEAssistCommand(this.temperatureFeature);
+        var mainPluginCmd = this.getCommand("lifepveassist");
+        if (mainPluginCmd != null) {
+            mainPluginCmd.setExecutor(mainCommand);
+            mainPluginCmd.setTabCompleter(mainCommand);
+        }
         this.getCommand("blocking").setExecutor(new BlockingCommand());
 
         PluginManager pluginManager = this.getServer().getPluginManager();
@@ -48,19 +58,25 @@ public final class LifePvEAssist extends JavaPlugin {
         pluginManager.registerEvents(new PlayerJoinListener(this), this);
 
         FFN.register(this);
-        TempModule.register(this);
+        this.temperatureFeature.enable();
 
         pluginManager.registerEvents(new KillerChocolateListener(), this);
         pluginManager.registerEvents(new LosingCats(this), this);
 
-        PacketEvents.getAPI().getEventManager().registerListener(new PacketListenerImpl());
+        this.packetListener = PacketEvents.getAPI().getEventManager().registerListener(new PacketListenerImpl());
 
         this.getLogger().info("LifePvEAssist has been enabled.");
     }
 
     @Override
     public void onDisable() {
-        TempModule.shutdown();
+        if (this.packetListener != null) {
+            PacketEvents.getAPI().getEventManager().unregisterListener(this.packetListener);
+            this.packetListener = null;
+        }
+        if (this.temperatureFeature != null) {
+            this.temperatureFeature.disable();
+        }
         FFN.clear();
         this.getLogger().info("LifePvEAssist has been disabled.");
     }

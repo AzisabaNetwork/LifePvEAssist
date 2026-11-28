@@ -56,6 +56,11 @@ dependencies {
         exclude("org.slf4j", "slf4j-api")
     }
     implementation("org.mariadb.jdbc:mariadb-java-client:3.5.3")
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("com.h2database:h2:2.3.232")
+    testRuntimeOnly("org.slf4j:slf4j-simple:2.0.16")
 }
 
 java {
@@ -99,5 +104,9 @@ tasks {
 
     assemble {
         dependsOn(shadowJar)
+    }
+
+    test {
+        useJUnitPlatform()
     }
 }

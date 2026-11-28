@@ -8,28 +8,24 @@ softdepend: [ Vault, WorldEdit, FastAsyncWorldEdit ]
 
 commands:
   lifepveassist:
-    description: LifePvEAssist main command
-    permission: lifepveassist.command.lifecraft
+    description: LifePvEAssist main command (LifeCraft / temp)
+    aliases: [ lpa ]
+    usage: /<command> [temp <info|set|add|reset|armor|zone|bypass|reload>]
   blocking:
     description: Toggle repair/salvage blocking
-  lifetemp:
-    description: Temperature management command
-    aliases: [ltm, temp]
-    usage: /<command> <info|set|add|reset|armor|zone|reload>
-    permission: lifepveassist.temp.use
 
 permissions:
   lifepveassist.command.lifecraft:
-    description: Allows using the /lifepveassist command
+    description: Allows opening the LifeCraft menu via /lifepveassist
     default: op
   lifepveassist.temp.use:
-    description: Allows checking own temperature info
+    description: Allows checking own temperature info via /lifepveassist temp info
     default: true
   lifepveassist.temp.admin:
-    description: Allows using all temperature admin commands
+    description: Allows using all temperature admin subcommands
     default: op
     children:
       lifepveassist.temp.use: true
   lifepveassist.temp.bypass:
-    description: Bypasses temperature penalties, lethal effects, and zone changes
-    default: false
+    description: Allows toggling personal temperature bypass mode via /lifepveassist temp bypass
+    default: op

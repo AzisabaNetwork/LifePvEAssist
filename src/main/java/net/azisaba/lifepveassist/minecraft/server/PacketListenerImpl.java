@@ -40,16 +40,19 @@ public class PacketListenerImpl extends PacketListenerAbstract {
             if (player.getGameMode() == GameMode.ADVENTURE) {
                 RayTraceResult ray = player.rayTraceBlocks(4.5D);
                 if (ray != null && ray.getHitBlock() != null && ray.getHitBlockFace() != null) {
-                    if (Util.canUseItem(player, player.getInventory().getItemInMainHand()) && Util.canUseItem(player, player.getInventory().getItemInOffHand())) {
+                    if (canUseItems(player)) {
                         Block b = ray.getHitBlock();
                         Action action = b.getType() == Material.AIR ? Action.LEFT_CLICK_AIR : Action.LEFT_CLICK_BLOCK;
                         BlockFace face = ray.getHitBlockFace();
-                        Bukkit.getScheduler().runTask(LifePvEAssist.getInstance(), () -> {
-                            PlayerInteractEvent interactEvent = new PlayerInteractEvent(
-                                    player, action, player.getInventory().getItemInMainHand(), b, face
-                            );
-                            interactEvent.callEvent();
-                        });
+                        LifePvEAssist plugin = LifePvEAssist.getInstance();
+                        if (plugin != null && plugin.isEnabled()) {
+                            Bukkit.getScheduler().runTask(plugin, () -> {
+                                PlayerInteractEvent interactEvent = new PlayerInteractEvent(
+                                        player, action, player.getInventory().getItemInMainHand(), b, face
+                                );
+                                interactEvent.callEvent();
+                            });
+                        }
                     }
                 }
             }
@@ -86,5 +89,13 @@ public class PacketListenerImpl extends PacketListenerAbstract {
                 }
             }
         }
+    }
+
+    private static boolean canUseItems(Player player) {
+        if (!Bukkit.getPluginManager().isPluginEnabled("LifePvELevel")) {
+            return true;
+        }
+        return Util.canUseItem(player, player.getInventory().getItemInMainHand())
+                && Util.canUseItem(player, player.getInventory().getItemInOffHand());
     }
 }
