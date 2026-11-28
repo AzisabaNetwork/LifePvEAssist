@@ -33,6 +33,10 @@ repositories {
         name = "jitpack-repo"
         url = uri("https://jitpack.io")
     }
+    maven {
+        name = "enginehub-repo"
+        url = uri("https://maven.enginehub.org/repo/")
+    }
 }
 
 dependencies {
@@ -43,8 +47,20 @@ dependencies {
     compileOnly("com.github.MilkBowl:VaultAPI:1.7") {
         exclude("org.bukkit", "bukkit")
     }
+    compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.3.10") {
+        exclude("org.bukkit", "bukkit")
+    }
 
     implementation(kotlin("stdlib"))
+    implementation("com.zaxxer:HikariCP:6.2.1") {
+        exclude("org.slf4j", "slf4j-api")
+    }
+    implementation("org.mariadb.jdbc:mariadb-java-client:3.5.3")
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("com.h2database:h2:2.3.232")
+    testRuntimeOnly("org.slf4j:slf4j-simple:2.0.16")
 }
 
 java {
@@ -76,8 +92,11 @@ tasks {
     shadowJar {
         archiveClassifier.set("")
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
+        mergeServiceFiles()
         relocate("kotlin", "net.azisaba.lifepveassist.lib.kotlin")
         relocate("org.jetbrains", "net.azisaba.lifepveassist.lib.org.jetbrains")
+        relocate("com.zaxxer.hikari", "net.azisaba.lifepveassist.lib.hikari")
+        relocate("org.mariadb.jdbc", "net.azisaba.lifepveassist.lib.mariadb")
     }
 
     jar {
@@ -86,5 +105,9 @@ tasks {
 
     assemble {
         dependsOn(shadowJar)
+    }
+
+    test {
+        useJUnitPlatform()
     }
 }

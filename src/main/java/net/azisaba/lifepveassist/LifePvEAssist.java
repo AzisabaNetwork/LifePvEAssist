@@ -1,8 +1,10 @@
 package net.azisaba.lifepveassist;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.event.PacketListenerCommon;
 import net.azisaba.lifepveassist.command.LifePvEAssistCommand;
 import net.azisaba.lifepveassist.ffn.FFN;
+import net.azisaba.lifepveassist.temperature.TemperatureFeature;
 import net.azisaba.lifepveassist.losingcats.LosingCats;
 import net.azisaba.lifepveassist.killerschocolate.KillerChocolateListener;
 import net.azisaba.lifepveassist.listener.CraftListener;
@@ -23,6 +25,8 @@ public final class LifePvEAssist extends JavaPlugin {
 
     private static LifePvEAssist instance;
     public static SpigotPlugin pveLevel;
+    private TemperatureFeature temperatureFeature;
+    private PacketListenerCommon packetListener;
 
     public LifePvEAssist() {
         instance = this;
@@ -36,8 +40,16 @@ public final class LifePvEAssist extends JavaPlugin {
     public void onEnable() {
         this.saveDefaultConfig();
         this.migrateFFNConfig();
+        this.migrateTemperatureConfig();
 
-        this.getCommand("lifepveassist").setExecutor(new LifePvEAssistCommand());
+        this.temperatureFeature = new TemperatureFeature(this);
+
+        LifePvEAssistCommand mainCommand = new LifePvEAssistCommand(this.temperatureFeature);
+        var mainPluginCmd = this.getCommand("lifepveassist");
+        if (mainPluginCmd != null) {
+            mainPluginCmd.setExecutor(mainCommand);
+            mainPluginCmd.setTabCompleter(mainCommand);
+        }
         this.getCommand("blocking").setExecutor(new BlockingCommand());
 
         PluginManager pluginManager = this.getServer().getPluginManager();
@@ -47,17 +59,25 @@ public final class LifePvEAssist extends JavaPlugin {
         pluginManager.registerEvents(new PlayerJoinListener(this), this);
 
         FFN.register(this);
+        this.temperatureFeature.enable();
 
         pluginManager.registerEvents(new KillerChocolateListener(), this);
         pluginManager.registerEvents(new LosingCats(this), this);
 
-        PacketEvents.getAPI().getEventManager().registerListener(new PacketListenerImpl());
+        this.packetListener = PacketEvents.getAPI().getEventManager().registerListener(new PacketListenerImpl());
 
         this.getLogger().info("LifePvEAssist has been enabled.");
     }
 
     @Override
     public void onDisable() {
+        if (this.packetListener != null) {
+            PacketEvents.getAPI().getEventManager().unregisterListener(this.packetListener);
+            this.packetListener = null;
+        }
+        if (this.temperatureFeature != null) {
+            this.temperatureFeature.disable();
+        }
         FFN.clear();
         this.getLogger().info("LifePvEAssist has been disabled.");
     }
@@ -97,6 +117,40 @@ public final class LifePvEAssist extends JavaPlugin {
         config.set("GatherList", null);
 
         this.saveConfig();
+    }
+
+    /**
+     * 既存サーバーの {@code config.yml} に {@code database:} / {@code temperature:} セクションや
+     * 新規キーが不足している場合、JAR 内デフォルト設定から不足分のみ追記して保存する。
+     * 既存の他設定（{@code pvp-enabled-worlds}, {@code ffn} 等）は上書きしない。
+     */
+    private void migrateTemperatureConfig() {
+        FileConfiguration config = this.getConfig();
+        org.bukkit.configuration.Configuration defaults = config.getDefaults();
+        if (defaults == null) {
+            return;
+        }
+        boolean modified = false;
+        for (String rootKey : new String[]{"database", "temperature"}) {
+            ConfigurationSection defaultSec = defaults.getConfigurationSection(rootKey);
+            if (defaultSec == null) {
+                continue;
+            }
+            for (String relKey : defaultSec.getKeys(true)) {
+                if (defaultSec.isConfigurationSection(relKey)) {
+                    continue;
+                }
+                String fullPath = rootKey + "." + relKey;
+                if (!config.isSet(fullPath)) {
+                    config.set(fullPath, defaultSec.get(relKey));
+                    modified = true;
+                }
+            }
+        }
+        if (modified) {
+            this.saveConfig();
+            this.getLogger().info("[Temperature] config.yml に不足していた database / temperature 設定を自動追記しました。");
+        }
     }
 
     public void setup() {

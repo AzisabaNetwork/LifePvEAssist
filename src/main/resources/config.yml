@@ -14,3 +14,136 @@ ffn:
   GatherList:
   #STONE:
   #- "mlg %digger% ffnDrop2 1 1"
+
+# 共通データベース設定 (LifeCore 準拠 / temperature.enabled-worlds が空の場合は接続を行いません)
+database:
+  # MariaDB Connector/J を使用するため、MySQL サーバーへも jdbc:mariadb で接続します
+  # (jdbc:mysql は使用しないでください)
+  scheme: jdbc:mariadb
+  hostname: localhost
+  port: 3306
+  name: lifepveassist
+  username: lifepveassist
+  password: ""
+  properties:
+    useSSL: false
+    verifyServerCertificate: false
+    prepStmtCacheSize: 250
+    prepStmtCacheSqlLimit: 2048
+    cachePrepStmts: true
+    useServerPrepStmts: true
+    socketTimeout: 30000
+    useLocalSessionState: true
+    rewriteBatchedStatements: true
+    maintainTimeStats: false
+
+# 温度管理機能設定 (裏上級向け)
+temperature:
+  # マルチサーバー環境で Zone を識別するサーバー名
+  server-name: "default"
+
+  # 温度管理を有効化するワールド名（空の場合は温度機能・DB接続ともに起動しません）
+  enabled-worlds: []
+
+  # 基本温度設定
+  default: 20.0
+  base-max-limit: 100.0
+  base-min-limit: -80.0
+
+  # 自然回復設定
+  recovery:
+    # 最後の外部温度変更から自然回復が始まるまでの待機時間 (秒)
+    delay-seconds: 10
+    # 待機時間経過後、1秒ごとにデフォルト温度へ戻る量 (℃/秒)
+    rate-per-second: 20.0
+
+  # 永続化・同期設定
+  storage:
+    # dirty なプレイヤーの定期オートセーブ＋ロック更新間隔 (秒)
+    save-interval-seconds: 60
+    # Join 後に移動元サーバーのロック解除を待つ最大時間 (ミリ秒)
+    join-load-max-wait-millis: 2000
+    # 移動元サーバーのクラッシュ等で locked が残った場合にタイムアウトとみなす秒数
+    # (必ず save-interval-seconds * 3 以上にしてください)
+    lock-timeout-seconds: 180
+
+  # 専用防具（Paper 標準 PDC コンポーネント: lifepveassist:temp_heat / lifepveassist:temp_cold）
+  armor:
+    # デメリット緩和に必要な装備部位数（1アイテム＝常に1部位固定）
+    stage1-immunity-pieces: 2
+    stage2-damage-immunity-pieces: 4
+    # 防具による耐熱・耐冷延長ボーナスの合計上限 (℃)
+    max-bonus: 300.0
+
+  # デメリット設定（各プレイヤーの現在の即死ラインからの逆算）
+  penalties:
+    # 第1段階: 鈍足・盲目（2部位以上で無効化）
+    stage1:
+      offset-from-lethal: 40.0
+      slowness:
+        enabled: true
+        amplifier: 1
+      blindness:
+        enabled: true
+        amplifier: 0
+      effect-duration-ticks: 60
+
+    # 第2段階: 継続ダメージ＋視界エフェクト（4部位以上で継続ダメージのみ無効化・視界エフェクトは維持）
+    stage2:
+      offset-from-lethal: 20.0
+      damage:
+        enabled: true
+        amount: 2.0
+        interval-seconds: 1
+        # true = 防具貫通・ノックバックなし (衝撃吸収を優先消費して setHealth で直接減算 / デフォルト)
+        #        ※ EntityDamageEvent を発火しないため WorldGuard invincible や他プラグインのダメージリスナーを迂回します
+        # false = 通常ダメージイベント経由 (player.damage)
+        bypass-armor: true
+      visual-effects:
+        heat-red-overlay: true
+        cold-freeze-overlay: true
+        cold-freeze-ticks: 140
+
+    # 第3段階: 即死（および継続ダメージ死時のグローバル死亡メッセージ / MiniMessage形式）
+    # 使用可能プレースホルダー: <player>, <temp>
+    lethal:
+      heat-death-message: "<red><bold><player> は灼熱の高温に耐えられず力尽きた... (<temp>℃)"
+      cold-death-message: "<aqua><bold><player> は極寒の低温に耐えられず凍え死んだ... (<temp>℃)"
+
+  # 警告 Title 設定（第2段階の継続ダメージと同時発動）
+  warning:
+    enabled: true
+    offset-from-lethal: 20.0
+    interval-seconds: 5
+    fade-in-ticks: 5
+    stay-ticks: 30
+    fade-out-ticks: 10
+    heat:
+      title: "<red><bold>⚠ 高温警告 ⚠"
+      subtitle: "<gold>現在 <temp>℃ <gray>(即死ライン: <max>℃)"
+      sound: "minecraft:block.note_block.pling"
+      sound-volume: 1.0
+      sound-pitch: 0.6
+    cold:
+      title: "<aqua><bold>⚠ 低温警告 ⚠"
+      subtitle: "<white>現在 <temp>℃ <gray>(即死ライン: <min>℃)"
+      sound: "minecraft:block.note_block.pling"
+      sound-volume: 1.0
+      sound-pitch: 0.5
+
+  # BossBar によるリアルタイム温度表示（毎秒更新）
+  bossbar:
+    enabled: true
+    hide-when-normal: false
+    overlay: "NOTCHED_10"
+    title-format: "<status> <white>温度: <temp_color><temp>℃ <gray>[<aqua><min>℃ <gray>～ <red><max>℃<gray>]"
+    status-labels:
+      normal: "<green>[安定]"
+      hot-stage1: "<yellow>[高温注意]"
+      hot-stage2: "<red><bold>[高温危険]"
+      cold-stage1: "<aqua>[低温注意]"
+      cold-stage2: "<blue><bold>[低温危険]"
+
+  # 空間温度変化エリア（WorldEdit API 選択連携 ＋ BlockDisplay/TextDisplay プレビュー）
+  zones:
+    preview-duration-seconds: 10
